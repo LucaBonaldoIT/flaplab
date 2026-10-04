@@ -648,9 +648,9 @@ function renderStartMenu(): void {
       <button class="start-back" data-view="main" type="button">‹ Back</button>
       <div class="start-title">About me</div>
       <p class="start-about-text">Hi, I’m Luca Bonaldo, the author of Flap Lab, a free, browser-based alternative to JFLAP. It’s made for students, teachers and researchers who work with automata and formal languages. Flap Lab is open source, and feedback, ideas and bug reports are always welcome.</p>
-      <a class="start-action" href="https://lucabonaldo.dev" target="_blank" rel="noopener noreferrer"><span class="start-icon">☺</span> Website</a>
-      <a class="start-action" href="https://github.com/LucaBonaldoIT" target="_blank" rel="noopener noreferrer"><span class="start-icon">⌥</span> GitHub</a>
-      <a class="start-action" href="https://github.com/LucaBonaldoIT/flaplab/issues" target="_blank" rel="noopener noreferrer"><span class="start-icon">✎</span> Report an issue</a>`;
+      <a class="start-action" href="https://lucabonaldo.dev" target="_blank" rel="noopener noreferrer"><span class="start-icon"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.8 1.9 2.7 3.9 2.7 6.2S9.8 12.3 8 14.2M8 1.8C6.2 3.7 5.3 5.7 5.3 8s.9 4.3 2.7 6.2"/></svg></span> Website</a>
+      <a class="start-action" href="https://github.com/LucaBonaldoIT" target="_blank" rel="noopener noreferrer"><span class="start-icon"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></span> GitHub</a>
+      <a class="start-action" href="https://github.com/LucaBonaldoIT/flaplab/issues" target="_blank" rel="noopener noreferrer"><span class="start-icon"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 4.6v4"/><circle cx="8" cy="11.3" r=".5" fill="currentColor"/></svg></span> Report an issue</a>`;
     return;
   }
   if (startMenuView === 'all') {
@@ -667,7 +667,7 @@ function renderStartMenu(): void {
     <button class="start-action" data-action="new" type="button"><span class="start-icon">＋</span> New file</button>
     <button class="start-action" data-action="open" type="button"><span class="start-icon">↧</span> Open file</button>
     <button class="start-action" data-action="clear-workspace" type="button"><span class="start-icon">✕</span> Clear workspace</button>
-    <button class="start-action" data-view="about" type="button"><span class="start-icon">ⓘ</span> About</button>
+    <button class="start-action" data-view="about" type="button"><span class="start-icon"><svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.2"/><path d="M8 7.2v4"/><circle cx="8" cy="4.9" r=".5" fill="currentColor"/></svg></span> About</button>
     <div class="start-section-label">RECENTS</div>
     ${recents.slice(0, 3).map((item, index) => recentButton(item, index)).join('') || '<div class="start-recents-empty">No recent files yet</div>'}
     ${recents.length > 3 ? '<button class="start-see-all" data-view="all" type="button">See all</button>' : ''}`;

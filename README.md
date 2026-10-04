@@ -27,7 +27,7 @@ Design and simulate finite-state, pushdown, and Turing machines and transducers,
 
 ## Overview
 
-Flap Lab is a static, browser-based reimagining of the classic JFLAP toolkit. It pairs a TypeScript computational core with a Vite-powered interface. There is no backend, no account, and no data leaves your machine. Documents are created, edited, and exchanged locally as `.jff` files.
+Flap Lab is a free, static, browser-based JFLAP alternative: a modern reimagining of the classic automata toolkit for students, teachers, and researchers. It pairs a TypeScript computational core with a Vite-powered interface. There is no backend, no account, and no data leaves your machine. Documents are created, edited, and exchanged locally as `.jff` files.
 
 ## Features
 

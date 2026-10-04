@@ -2,14 +2,63 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Flap Lab — Automata &amp; Formal Languages Workbench</title>
+    <meta name="description" content="Free browser-based workbench to design and simulate DFAs, NFAs, pushdown automata, Turing machines and Mealy/Moore transducers. Step through inputs, convert NFAs to DFAs, and import or export JFLAP files. No install, no account." />
+    <meta name="keywords" content="automata, finite automata, DFA, NFA, pushdown automaton, PDA, Turing machine, Mealy machine, Moore machine, formal languages, theory of computation, JFLAP, JFLAP alternative, automata simulator" />
+    <meta name="author" content="Luca Bonaldo" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href="https://flaplab.lucabonaldo.dev/" />
+
     <meta name="theme-color" content="#101412" />
-    <meta name="description" content="Flap Lab is a browser-based workbench for automata and formal languages." />
-    <title>Flap Lab</title>
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="./favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <link rel="manifest" href="./site.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Flap Lab" />
+    <meta property="og:title" content="Flap Lab — Automata &amp; Formal Languages Workbench" />
+    <meta property="og:description" content="Design and simulate DFAs, NFAs, PDAs, Turing machines and transducers in your browser. A modern, free JFLAP alternative." />
+    <meta property="og:url" content="https://flaplab.lucabonaldo.dev/" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:image" content="https://flaplab.lucabonaldo.dev/og-image.png" />
+    <meta property="og:image:secure_url" content="https://flaplab.lucabonaldo.dev/og-image.png" />
+    <meta property="og:image:type" content="image/png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Flap Lab: automata and formal languages, in your browser. Screenshot of a DFA being simulated." />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Flap Lab — Automata &amp; Formal Languages Workbench" />
+    <meta name="twitter:description" content="Design and simulate DFAs, NFAs, PDAs, Turing machines and transducers in your browser. A modern, free JFLAP alternative." />
+    <meta name="twitter:image" content="https://flaplab.lucabonaldo.dev/og-image.png" />
+    <meta name="twitter:image:alt" content="Flap Lab: automata and formal languages, in your browser. Screenshot of a DFA being simulated." />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "Flap Lab",
+        "url": "https://flaplab.lucabonaldo.dev/",
+        "description": "Browser-based workbench to design and simulate finite automata, pushdown automata, Turing machines and Mealy/Moore transducers.",
+        "applicationCategory": "EducationalApplication",
+        "operatingSystem": "Any (web browser)",
+        "browserRequirements": "Requires JavaScript",
+        "image": "https://flaplab.lucabonaldo.dev/og-image.png",
+        "isAccessibleForFree": true,
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+        "author": { "@type": "Person", "name": "Luca Bonaldo", "url": "https://lucabonaldo.dev" },
+        "codeRepository": "https://github.com/LucaBonaldoIT/flaplab"
+      }
+    </script>
   </head>
   <body>
     <div id="app"></div>
+    <noscript>
+      <h1>Flap Lab — Automata &amp; Formal Languages Workbench</h1>
+      <p>Flap Lab is a free, browser-based workbench to design and simulate DFAs, NFAs, pushdown automata, Turing machines and Mealy/Moore transducers. It requires JavaScript. Source code: <a href="https://github.com/LucaBonaldoIT/flaplab">github.com/LucaBonaldoIT/flaplab</a>.</p>
+    </noscript>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

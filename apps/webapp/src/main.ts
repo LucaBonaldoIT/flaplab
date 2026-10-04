@@ -621,7 +621,7 @@ bindPanelResizer($('#panel-resizer-bottom'), 'y', 'bottom', (event) => {
 });
 desktopPanelsQuery.addEventListener('change', applyPanelSizes);
 
-let startMenuView: 'main' | 'new' | 'all' = 'main';
+let startMenuView: 'main' | 'new' | 'all' | 'about' = 'main';
 
 function formatRecentTime(at: number): string {
   return new Date(at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -643,6 +643,16 @@ function renderStartMenu(): void {
       <button class="start-action" data-action="new-regex" type="button"><span class="start-icon">∗</span> Regular expression (.jff)</button>`;
     return;
   }
+  if (startMenuView === 'about') {
+    menu.innerHTML = `
+      <button class="start-back" data-view="main" type="button">‹ Back</button>
+      <div class="start-title">About me</div>
+      <p class="start-about-text">Hi, I’m Luca Bonaldo, the author of Flap Lab, a free, browser-based alternative to JFLAP. It’s made for students, teachers and researchers who work with automata and formal languages. Flap Lab is open source, and feedback, ideas and bug reports are always welcome.</p>
+      <a class="start-action" href="https://lucabonaldo.dev" target="_blank" rel="noopener noreferrer"><span class="start-icon">☺</span> Website</a>
+      <a class="start-action" href="https://github.com/LucaBonaldoIT" target="_blank" rel="noopener noreferrer"><span class="start-icon">⌥</span> GitHub</a>
+      <a class="start-action" href="https://github.com/LucaBonaldoIT/flaplab/issues" target="_blank" rel="noopener noreferrer"><span class="start-icon">✎</span> Report an issue</a>`;
+    return;
+  }
   if (startMenuView === 'all') {
     menu.innerHTML = `
       <button class="start-back" data-view="main" type="button">‹ Back</button>
@@ -657,6 +667,7 @@ function renderStartMenu(): void {
     <button class="start-action" data-action="new" type="button"><span class="start-icon">＋</span> New file</button>
     <button class="start-action" data-action="open" type="button"><span class="start-icon">↧</span> Open file</button>
     <button class="start-action" data-action="clear-workspace" type="button"><span class="start-icon">✕</span> Clear workspace</button>
+    <button class="start-action" data-view="about" type="button"><span class="start-icon">ⓘ</span> About</button>
     <div class="start-section-label">RECENTS</div>
     ${recents.slice(0, 3).map((item, index) => recentButton(item, index)).join('') || '<div class="start-recents-empty">No recent files yet</div>'}
     ${recents.length > 3 ? '<button class="start-see-all" data-view="all" type="button">See all</button>' : ''}`;
@@ -2904,6 +2915,7 @@ $('#start-menu').addEventListener('click', (event) => {
   const view = button.getAttribute('data-view');
   if (view === 'main') { startMenuView = 'main'; renderStartMenu(); return; }
   if (view === 'all') { startMenuView = 'all'; renderStartMenu(); return; }
+  if (view === 'about') { startMenuView = 'about'; renderStartMenu(); return; }
   const action = button.getAttribute('data-action');
   if (action === 'new') { startMenuView = 'new'; renderStartMenu(); return; }
   if (action === 'open') { $('#open-file').click(); return; }

@@ -91,7 +91,7 @@ export class JFLAP3Codec {
 /** JSON persistence replacing Java ObjectOutputStream for portable JS data. */
 export class SerializedCodec {
   encode(structure: JFLAPStructure): string {
-    return JSON.stringify({ format: 'flap-lab-core', version: 1, jff: encodeJFF(structure) });
+    return JSON.stringify({ format: 'flaplab-core', version: 1, jff: encodeJFF(structure) });
   }
   decode(serialized: string): JFLAPStructure {
     let payload: unknown;

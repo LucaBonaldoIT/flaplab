@@ -41,7 +41,7 @@ app.innerHTML = `
       <button class="button button-quiet" id="new-machine" title="Create a new machine">New</button>
       <label class="button button-quiet file-button" for="open-file">Open file<input id="open-file" type="file" /></label>
       <button class="button button-primary" id="save-file" title="Save (Ctrl/⌘ S)"><span class="button-icon">↧</span> Export file</button>
-      <a class="button button-quiet github-link" href="https://github.com/LucaBonaldoIT/flap-lab" target="_blank" rel="noopener noreferrer" title="View on GitHub" aria-label="View on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
+      <a class="button button-quiet github-link" href="https://github.com/LucaBonaldoIT/flaplab" target="_blank" rel="noopener noreferrer" title="View on GitHub" aria-label="View on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
     </div>
   </header>
 
@@ -161,11 +161,11 @@ app.innerHTML = `
         <div class="simulation-result" id="simulation-result" hidden></div>
       </section>
 
-      <div class="right-sidebar-footer"><span class="license-links"><a href="./LICENSE-JFLAP" target="_blank" rel="noreferrer">License</a><a href="https://github.com/LucaBonaldoIT/flap-lab/issues" target="_blank" rel="noreferrer">Contact</a></span></div>
+      <div class="right-sidebar-footer"><span class="license-links"><a href="./LICENSE-JFLAP" target="_blank" rel="noreferrer">License</a><a href="https://github.com/LucaBonaldoIT/flaplab/issues" target="_blank" rel="noreferrer">Contact</a></span></div>
       <div class="panel-resizer panel-resizer-right" id="panel-resizer-right"></div>
     </aside>
   </main>
-  <footer class="statusbar"><span id="status-message"><i class="status-led"></i> Ready — create a machine to start</span><span>FLAP LAB <b>·</b> MADE BY <a href="https://github.com/LucaBonaldoIT">LUCA BONALDO</a></span></footer>
+  <footer class="statusbar"><span id="status-message"><i class="status-led"></i> Ready — create a machine to start</span><span>FLAP LAB <b>·</b> MADE BY <a href="https://lucabonaldo.dev" target="_blank" rel="noopener noreferrer">LUCA BONALDO</a></span></footer>
   <div class="drop-overlay" id="drop-overlay" hidden><div class="drop-card">⇣ Drop a <b>.jff</b> or <b>.txt</b> file to open it</div></div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
 `;
@@ -278,7 +278,7 @@ function storeActiveTab(): void {
   tab.viewBox = { x: view.x, y: view.y, width: view.width, height: view.height };
 }
 
-const STORAGE_KEY = 'flap-lab.workspace.v1';
+const STORAGE_KEY = 'flaplab.workspace.v1';
 let saveTimer = 0;
 
 function scheduleSave(): void {
@@ -408,7 +408,7 @@ function scheduleEditRefresh(): void {
   }, 350);
 }
 
-const RECENTS_KEY = 'flap-lab.recents.v1';
+const RECENTS_KEY = 'flaplab.recents.v1';
 
 interface RecentFile { name: string; kind: 'automaton' | 'text'; data: string; at: number; }
 
@@ -510,7 +510,7 @@ function addRecent(entry: { name: string; kind: 'automaton' | 'text'; data: stri
   } catch { /* ignore */ }
 }
 
-const PANELS_KEY = 'flap-lab.panels.v1';
+const PANELS_KEY = 'flaplab.panels.v1';
 const DEFAULT_PANELS: PanelSizes = { left: 250, right: 300, bottom: 178 };
 const PANEL_LIMITS = { left: [180, 560], right: [200, 560], bottom: [80, 460] } as const;
 

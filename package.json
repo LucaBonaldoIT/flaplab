@@ -1,16 +1,16 @@
 {
-  "name": "flap-lab",
+  "name": "flaplab",
   "version": "0.1.0",
   "private": true,
   "description": "A browser workbench for automata and formal languages",
   "workspaces": ["packages/core"],
   "author": "Luca Bonaldo IT (https://github.com/LucaBonaldoIT)",
-  "repository": { "type": "git", "url": "git+https://github.com/LucaBonaldoIT/flap-lab.git" },
-  "bugs": { "url": "https://github.com/LucaBonaldoIT/flap-lab/issues" },
+  "repository": { "type": "git", "url": "git+https://github.com/LucaBonaldoIT/flaplab.git" },
+  "bugs": { "url": "https://github.com/LucaBonaldoIT/flaplab/issues" },
   "type": "module",
   "scripts": {
-    "build": "npm run build --workspace=flap-lab-core",
-    "test": "npm test --workspace=flap-lab-core",
+    "build": "npm run build --workspace=flaplab-core",
+    "test": "npm test --workspace=flaplab-core",
     "webapp:dev": "vite --config apps/webapp/vite.config.ts apps/webapp",
     "webapp:build": "vite build --config apps/webapp/vite.config.ts apps/webapp",
     "webapp:check": "tsc -p apps/webapp/tsconfig.json"

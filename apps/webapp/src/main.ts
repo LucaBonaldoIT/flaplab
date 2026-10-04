@@ -65,7 +65,7 @@ app.innerHTML = `
       </div>
       <div class="regex-test-wrap">
         <div class="regex-test-mirror" id="regex-test-mirror" aria-hidden="true"></div>
-        <textarea id="regex-test" wrap="off" spellcheck="false" placeholder="Comma-separated strings (empty = λ), # for comments"></textarea>
+        <textarea id="regex-test" wrap="off" spellcheck="false" placeholder="Comma-separated strings (empty = λ), @file.txt to include, # for comments"></textarea>
       </div>
     </div>
     <aside class="sidebar left-sidebar">
@@ -218,6 +218,7 @@ interface OpenTab {
   viewBox: { x: number; y: number; width: number; height: number } | null;
   input: string;
   stepInput: string;
+  tests: string;
   text: string;
   recentKey?: string;
 }
@@ -291,6 +292,7 @@ function storeActiveTab(): void {
   tab.history = history; tab.historyIndex = historyIndex;
   tab.input = ($<HTMLInputElement>('#input-string')).value;
   tab.stepInput = ($<HTMLInputElement>('#step-input')).value;
+  tab.tests = $<HTMLTextAreaElement>('#regex-test').value;
   tab.text = ($<HTMLTextAreaElement>('#text-editor')).value;
   const view = svg.viewBox.baseVal;
   tab.viewBox = { x: view.x, y: view.y, width: view.width, height: view.height };
@@ -319,12 +321,13 @@ function persistWorkspace(): void {
       if (index < 0) continue;
       const data = tab.kind === 'text' || tab.kind === 'regex' ? tab.text : JFFCodec.encode(tab.machine);
       if (recents[index]!.data !== data) { recents[index]!.data = data; recentsChanged = true; }
+      if (tab.kind === 'regex' && (recents[index]!.tests ?? '') !== tab.tests) { recents[index]!.tests = tab.tests; recentsChanged = true; }
     }
     if (recentsChanged) {
       try { localStorage.setItem(RECENTS_KEY, JSON.stringify(recents)); } catch { recents = []; }
     }
     const tabs = openTabs.map((tab) => {
-      const item: Record<string, unknown> = { id: tab.id, kind: tab.kind, filename: tab.filename, jff: JFFCodec.encode(tab.machine), viewBox: tab.viewBox, input: tab.input, stepInput: tab.stepInput, text: tab.text, recentKey: tab.recentKey };
+      const item: Record<string, unknown> = { id: tab.id, kind: tab.kind, filename: tab.filename, jff: JFFCodec.encode(tab.machine), viewBox: tab.viewBox, input: tab.input, stepInput: tab.stepInput, tests: tab.tests, text: tab.text, recentKey: tab.recentKey };
       if (tab.machine instanceof PushdownAutomaton) { item.acceptanceMode = tab.machine.acceptanceMode; item.singleInput = tab.machine.singleInput; }
       else if (tab.machine instanceof TuringMachine) item.acceptanceMode = tab.machine.acceptanceMode;
       return item;
@@ -352,6 +355,7 @@ function restoreWorkspace(): boolean {
           const restored = activeTab()!;
           if (typeof item.input === 'string') restored.input = item.input;
           if (typeof item.stepInput === 'string') restored.stepInput = item.stepInput;
+          if (typeof item.tests === 'string') restored.tests = item.tests;
           if (typeof item.recentKey === 'string') restored.recentKey = item.recentKey;
           continue;
         }
@@ -433,7 +437,7 @@ function scheduleEditRefresh(): void {
 
 const RECENTS_KEY = 'flaplab.recents.v1';
 
-interface RecentFile { name: string; kind: 'automaton' | 'text' | 'regex'; data: string; at: number; }
+interface RecentFile { name: string; kind: 'automaton' | 'text' | 'regex'; data: string; tests?: string; at: number; }
 
 function loadRecents(): RecentFile[] {
   try {
@@ -671,6 +675,7 @@ function openStartTab(tabId?: string): void {
     viewBox: null,
     input: '',
     stepInput: '',
+    tests: '',
     text: '',
   };
   if (!tabId) tabCounter = Math.max(tabCounter, Number(tab.id.slice(4)) || 0);
@@ -684,6 +689,7 @@ function openStartTab(tabId?: string): void {
   $<HTMLInputElement>('#input-string').value = '';
   $<HTMLInputElement>('#step-input').value = '';
   $<HTMLTextAreaElement>('#text-editor').value = '';
+  $<HTMLTextAreaElement>('#regex-test').value = '';
   stepperSession = null;
   $('#simulation-result').hidden = true;
   renderTabs();
@@ -691,11 +697,13 @@ function openStartTab(tabId?: string): void {
   scheduleSave();
 }
 
-function convertToTextTab(filename: string, text: string, kind: 'text' | 'regex' = 'text'): void {
+function convertToTextTab(filename: string, text: string, kind: 'text' | 'regex' = 'text', tests = ''): void {
   const tab = activeTab();
   if (!tab) return;
   tab.kind = kind;
   tab.text = text;
+  tab.tests = tests;
+  $<HTMLTextAreaElement>('#regex-test').value = tests;
   tab.machine = new FiniteStateAutomaton();
   tab.history = [cloneAutomaton(tab.machine)];
   tab.historyIndex = 0;
@@ -734,6 +742,7 @@ function activateTab(id: string): void {
   $<HTMLInputElement>('#input-string').value = target.input;
   $<HTMLInputElement>('#step-input').value = target.stepInput;
   $<HTMLTextAreaElement>('#text-editor').value = target.text;
+  $<HTMLTextAreaElement>('#regex-test').value = target.tests;
   $('#add-state').classList.remove('is-active'); $('#canvas-shell').classList.remove('is-adding');
   if (target.viewBox) setCanvasView(target.viewBox.x, target.viewBox.y, target.viewBox.width, target.viewBox.height);
   renderTabs(); render(); updateHistoryButtons();
@@ -774,6 +783,26 @@ function renderTabs(): void {
   region.append(plus);
 }
 
+/** Keeps the recents entry of a tab in step with its filename after a rename. */
+function renameRecent(tab: OpenTab): void {
+  if (!tab.recentKey) return;
+  const kind = tab.recentKey.slice(0, tab.recentKey.indexOf(':'));
+  const newKey = `${kind}:${tab.filename.toLowerCase()}`;
+  if (newKey === tab.recentKey) return;
+  try {
+    const list = loadRecents();
+    const index = list.findIndex((entry) => `${entry.kind}:${entry.name.toLowerCase()}` === tab.recentKey);
+    if (index >= 0) {
+      const [entry] = list.splice(index, 1);
+      const clash = list.findIndex((other) => `${other.kind}:${other.name.toLowerCase()}` === newKey);
+      if (clash >= 0) list.splice(clash, 1);
+      list.splice(Math.min(index, list.length), 0, { ...entry!, name: tab.filename });
+      localStorage.setItem(RECENTS_KEY, JSON.stringify(list));
+    }
+  } catch { /* ignore */ }
+  tab.recentKey = newKey;
+}
+
 function beginRename(): void {
   if (activeTab()?.kind === 'start') return;
   const button = document.querySelector('#document-tabs .is-active .tab-label');
@@ -786,13 +815,20 @@ function beginRename(): void {
     if (finished) return;
     finished = true;
     const tab = activeTab();
-    const name = save ? input.value.trim() : currentFilename;
+    let name = save ? input.value.trim() : currentFilename;
+    if (name && tab) {
+      const text = tab.kind === 'text';
+      if (!(text ? /\.txt$/iu : /\.(jff|xml)$/iu).test(name)) name += text ? '.txt' : '.jff';
+    }
     if (tab) tab.filename = name || tab.filename;
+    if (tab) renameRecent(tab);
     currentFilename = tab?.filename ?? currentFilename;
     renderTabs();
     scheduleSave();
   };
+  input.addEventListener('click', (event) => event.stopPropagation());
   input.addEventListener('keydown', (event) => {
+    event.stopPropagation();
     if (event.key === 'Enter') { event.preventDefault(); finish(true); }
     else if (event.key === 'Escape') { event.preventDefault(); finish(false); }
   });
@@ -800,6 +836,7 @@ function beginRename(): void {
 }
 
 function closeTab(id: string): void {
+  persistWorkspace();
   const index = openTabs.findIndex((tab) => tab.id === id);
   if (index < 0) return;
   if (openTabs.length === 1) {
@@ -832,6 +869,7 @@ function openTab(machineInstance: Machine, filename: string, tabId?: string): vo
     viewBox: null,
     input: '',
     stepInput: '',
+    tests: '',
     text: '',
   };
   if (!tabId) tabCounter = Math.max(tabCounter, Number(tab.id.slice(4)) || 0);
@@ -845,6 +883,7 @@ function openTab(machineInstance: Machine, filename: string, tabId?: string): vo
   selectedState = null; selectedTransition = null;
   $<HTMLInputElement>('#input-string').value = '';
   $<HTMLInputElement>('#step-input').value = '';
+  $<HTMLTextAreaElement>('#regex-test').value = '';
   stepperSession = null;
   $('#simulation-result').hidden = true;
   renderTabs();
@@ -1513,7 +1552,13 @@ function render(): void {
   $('#regex-tests').hidden = !regexMode;
   $('#regex-hint').hidden = !regexMode;
   editor.placeholder = regexMode ? '(a+b)*abb' : 'Type anything…';
-  if (regexMode) refreshRegexBar();
+  if (regexMode) {
+    const field = $<HTMLTextAreaElement>('#regex-test');
+    const refreshed = refreshRegexBlocks(field.value);
+    if (refreshed !== field.value) { field.value = refreshed; const tab = activeTab(); if (tab) tab.tests = refreshed; scheduleSave(); }
+    regexLastValue = field.value;
+    refreshRegexBar();
+  }
   const overlay = $('#start-overlay');
   if (startMode) { renderStartMenu(); overlay.hidden = false; } else { overlay.hidden = true; startMenuView = 'main'; }
   renderStateSelectors(); renderTransitionFields(); renderSimulatorOptions(); renderMachineSettings(); renderStateList(); renderStateEditor(); renderSelectedTransitionEditor(); renderTransitions(); renderGraph();
@@ -1869,6 +1914,13 @@ function completeInputSuggestion(): void {
   updateInputSuggestion();
 }
 
+/** Contents of a .txt file by name: an open tab first, then recents. */
+function lookupTextFile(name: string): string | undefined {
+  const key = `text:${name.toLowerCase()}`;
+  const openText = openTabs.find((tab) => tab.kind === 'text' && (tab.recentKey ?? `text:${tab.filename.toLowerCase()}`) === key);
+  return openText ? openText.text : loadRecents().find((item) => item.kind === 'text' && item.name.toLowerCase() === name.toLowerCase())?.data;
+}
+
 function resolveSimulateInputs(raw: string, depth = 0): string[] {
   if (depth > 5) throw new Error('@file references are nested too deeply.');
   const cleaned = raw.split('\n').map((line) => line.split('#')[0]).join('');
@@ -1878,9 +1930,7 @@ function resolveSimulateInputs(raw: string, depth = 0): string[] {
     if (token.startsWith('@')) {
       const name = token.slice(1).trim();
       if (!name) continue;
-      const key = `text:${name.toLowerCase()}`;
-      const openText = openTabs.find((tab) => tab.kind === 'text' && (tab.recentKey ?? `text:${tab.filename.toLowerCase()}`) === key);
-      const data = openText ? openText.text : loadRecents().find((item) => item.kind === 'text' && item.name.toLowerCase() === name.toLowerCase())?.data;
+      const data = lookupTextFile(name);
       if (data === undefined) throw new Error(`Referenced file "${token}" not found. Open it once so it can be used.`);
       result.push(...resolveSimulateInputs(data, depth + 1));
     } else {
@@ -2346,29 +2396,38 @@ $('#step-back').addEventListener('click', () => { if (stepperSession && stepperS
 $('#input-string').addEventListener('input', scheduleSave);
 interface RegexTestPiece { text: string; type: 'item' | 'comma' | 'comment'; item: number; }
 
-/** Splits test-string text into comma-separated items; `#` starts a comment that runs to the end of the line. */
-function parseRegexTests(raw: string): { pieces: RegexTestPiece[]; values: string[] } {
-  const pieces: RegexTestPiece[] = [];
+/** Splits test-string text parts into comma-separated items; `#` starts a comment that runs to the end of the line. Items may continue across parts. */
+function parseRegexTestParts(texts: string[]): { parts: RegexTestPiece[][]; values: string[] } {
+  const parts: RegexTestPiece[][] = [];
   const values: string[] = [''];
   let item = 0; let comment = false;
-  for (const char of raw) {
-    let type: RegexTestPiece['type'] = 'item';
-    if (comment) { if (char === '\n') comment = false; else type = 'comment'; }
-    else if (char === '#') { comment = true; type = 'comment'; }
-    else if (char === ',') type = 'comma';
-    const last = pieces.at(-1);
-    if (last && last.type === type && last.item === item) last.text += char; else pieces.push({ text: char, type, item });
-    if (type === 'item') values[item] += char;
-    if (type === 'comma') { item++; values.push(''); }
+  for (const raw of texts) {
+    const pieces: RegexTestPiece[] = [];
+    for (const char of raw) {
+      let type: RegexTestPiece['type'] = 'item';
+      if (comment) { if (char === '\n') comment = false; else type = 'comment'; }
+      else if (char === '#') { comment = true; type = 'comment'; }
+      else if (char === ',') type = 'comma';
+      const last = pieces.at(-1);
+      if (last && last.type === type && last.item === item) last.text += char; else pieces.push({ text: char, type, item });
+      if (type === 'item') values[item] += char;
+      if (type === 'comma') { item++; values.push(''); }
+    }
+    parts.push(pieces);
   }
-  const cleaned = values.map((value) => value.replace(/[\r\n]/gu, '').trim().replace(/^(?:!|λ|ε)$/u, ''));
-  if (cleaned.at(-1) === '') cleaned.pop();
-  return { pieces, values: cleaned };
+  const trimmed = values.map((value) => value.replace(/[\r\n]/gu, '').trim());
+  if (trimmed.at(-1) === '') trimmed.pop();
+  return { parts, values: trimmed.map((value) => value.replace(/^(?:!|λ|ε)$/u, '')) };
 }
 
-/** Rewrites `!` to λ and fills empty (non-trailing) items with λ, keeping the cursor in place. */
-function normalizeRegexTests(raw: string, cursor: number): { text: string; cursor: number } {
-  let text = ''; let comment = false; let hasContent = false;
+function parseRegexTests(raw: string): { pieces: RegexTestPiece[]; values: string[] } {
+  const { parts, values } = parseRegexTestParts([raw]);
+  return { pieces: parts[0]!, values };
+}
+
+/** Rewrites `!` to λ and fills empty (non-trailing) items with λ, keeping the cursor in place. `continuation` means the text continues an item started before it. */
+function normalizeRegexTests(raw: string, cursor: number, continuation = false): { text: string; cursor: number } {
+  let text = ''; let comment = false; let hasContent = continuation;
   let itemStart = 0; let itemStartOut = 0; let moved = cursor;
   for (let index = 0; index < raw.length; index++) {
     const char = raw[index]!;
@@ -2388,13 +2447,228 @@ function normalizeRegexTests(raw: string, cursor: number): { text: string; curso
   return { text, cursor: moved };
 }
 
-function renderRegexMirror(pieces: RegexTestPiece[], verdicts: Array<boolean | null>): void {
-  $('#regex-test-mirror').innerHTML = pieces.map((piece) => {
-    const verdict = piece.type === 'item' ? verdicts[piece.item] : null;
-    const cls = piece.type === 'comment' ? 'is-comment' : verdict === true ? 'is-accepted' : verdict === false ? 'is-rejected' : '';
-    return `<span class="${cls}">${escapeHtml(piece.text)}</span>`;
-  }).join('') + '\u200b';
-  syncRegexMirrorScroll();
+// A referenced .txt is shown inline as a block: an opening rule carrying the file name, the file's content, and a closing rule.
+const REGEX_RULE = '─'.repeat(24);
+const REGEX_OPEN_RULE = /^─{3,} (\S.*)$/u;
+const REGEX_CLOSE_RULE = /^─{3,}$/u;
+interface RegexSegment { block: boolean; text: string; name: string; content: string; }
+
+function makeRegexBlock(name: string, content: string, leadingNewline: boolean): string {
+  return `${leadingNewline ? '\n' : ''}${REGEX_RULE} ${name}\n${content}\n${REGEX_RULE}`;
+}
+
+/** Splits the test-strings text into plain text and file blocks; the segment texts always concatenate back to the input. */
+function splitRegexSegments(raw: string): RegexSegment[] {
+  const lines = raw.split('\n');
+  const segments: RegexSegment[] = [];
+  let start = 0;
+  const pushText = (from: number, to: number): void => {
+    if (to > from) segments.push({ block: false, text: (from > 0 ? '\n' : '') + lines.slice(from, to).join('\n'), name: '', content: '' });
+  };
+  for (let index = 0; index < lines.length; index++) {
+    const open = REGEX_OPEN_RULE.exec(lines[index]!);
+    if (!open) continue;
+    let close = -1;
+    for (let probe = index + 1; probe < lines.length; probe++) if (REGEX_CLOSE_RULE.test(lines[probe]!)) { close = probe; break; }
+    if (close < 0) continue;
+    pushText(start, index);
+    segments.push({ block: true, text: (index > 0 ? '\n' : '') + lines.slice(index, close + 1).join('\n'), name: open[1]!.trim(), content: lines.slice(index + 1, close).join('\n') });
+    index = close; start = close + 1;
+  }
+  pushText(start, lines.length);
+  return segments;
+}
+
+const REGEX_FILE_TOKEN = /@[^\s,#]+\.txt/giu;
+
+/** Puts every `@file.txt` reference on a line of its own, ending with a comma; text before it moves up, text after it moves down. Keeps the caret in place. */
+function ensureCommaAfterFiles(raw: string, caret: number): { text: string; cursor: number } {
+  let out = ''; let cursor = -1; let lineStart = 0;
+  const claim = (from: number, to: number, outStart: number): void => { if (cursor < 0 && caret >= from && caret <= to) cursor = outStart + caret - from; };
+  raw.split('\n').forEach((line, index) => {
+    if (index > 0) out += '\n';
+    const hash = line.indexOf('#');
+    const head = hash < 0 ? line : line.slice(0, hash);
+    const tokens = [...head.matchAll(REGEX_FILE_TOKEN)];
+    if (!tokens.length) { claim(lineStart, lineStart + line.length, out.length); out += line; lineStart += line.length + 1; return; }
+    let used = 0; let first = true;
+    for (const token of tokens) {
+      const start = token.index; const end = start + token[0].length;
+      const before = line.slice(used, start);
+      if (before.trim()) {
+        const kept = before.trimEnd();
+        claim(lineStart + used, lineStart + used + kept.length, out.length);
+        out += kept + (kept.endsWith(',') ? '' : ',') + '\n';
+      } else if (!first) out += '\n';
+      claim(lineStart + start, lineStart + end - 1, out.length);
+      out += `${token[0]},`;
+      const separator = /^[ \t]*,?[ \t]*/u.exec(line.slice(end))![0];
+      if (cursor < 0 && caret >= lineStart + end && caret <= lineStart + end + separator.length) cursor = out.length;
+      used = end + separator.length; first = false;
+    }
+    const tail = line.slice(used);
+    if (tail) { out += '\n'; claim(lineStart + used, lineStart + line.length, out.length); out += tail; }
+    lineStart += line.length + 1;
+  });
+  return { text: out, cursor: cursor < 0 ? caret : cursor };
+}
+
+/** Applies λ normalization to the text parts and the block contents, keeping the caret in place. */
+function normalizeRegexField(raw: string, caret: number): { text: string; cursor: number } {
+  let out = ''; let offset = 0; let cursor = caret; let claimed = false; let previousBlock = false;
+  for (const segment of splitRegexSegments(raw)) {
+    const start = offset; const end = offset + segment.text.length; offset = end;
+    const here = !claimed && caret >= start && caret <= end;
+    if (here) claimed = true;
+    if (!segment.block) {
+      const commas = ensureCommaAfterFiles(segment.text, here ? caret - start : -1);
+      const result = normalizeRegexTests(commas.text, commas.cursor, previousBlock);
+      if (here) cursor = out.length + result.cursor;
+      out += result.text;
+    } else {
+      const lead = segment.text.startsWith('\n') ? 1 : 0;
+      const lines = segment.text.slice(lead).split('\n');
+      if (lines.length < 3) { if (here) cursor = out.length + (caret - start); out += segment.text; }
+      else {
+        const prefix = lead + lines[0]!.length + 1;
+        const result = normalizeRegexTests(segment.content, here && caret - start >= prefix && caret - start <= prefix + segment.content.length ? caret - start - prefix : -1);
+        const text = `${segment.text.slice(0, prefix)}${result.text}${segment.text.slice(prefix + segment.content.length)}`;
+        if (here) {
+          const local = caret - start;
+          cursor = out.length + (local < prefix ? local : local <= prefix + segment.content.length ? prefix + result.cursor : local + result.text.length - segment.content.length);
+        }
+        out += text;
+      }
+    }
+    previousBlock = segment.block;
+  }
+  return { text: out, cursor };
+}
+
+/** True when `next` keeps every rule line of `previous` intact: no rule line edited, no new or stray one added; whole blocks may vanish. */
+function regexRulesIntact(previous: string, next: string): boolean {
+  const keyOf = (segment: RegexSegment): string => segment.text.replace(/^\n/u, '').split('\n').filter((line) => /^─{3,}/u.test(line)).join('\n');
+  const available = new Map<string, number>();
+  for (const segment of splitRegexSegments(previous)) if (segment.block) available.set(keyOf(segment), (available.get(keyOf(segment)) ?? 0) + 1);
+  let blocks = 0;
+  for (const segment of splitRegexSegments(next)) {
+    if (!segment.block) continue;
+    blocks++;
+    const key = keyOf(segment);
+    const left = available.get(key) ?? 0;
+    if (left < 1) return false;
+    available.set(key, left - 1);
+  }
+  return next.split('\n').filter((line) => /^─{3,}/u.test(line)).length === blocks * 2;
+}
+
+/** Writes edited block content back to its .txt file (open tab and recents). */
+function writeTextFile(name: string, content: string): void {
+  const key = `text:${name.toLowerCase()}`;
+  const open = openTabs.find((tab) => tab.kind === 'text' && (tab.recentKey ?? `text:${tab.filename.toLowerCase()}`) === key);
+  if (open) open.text = content;
+  try {
+    const list = loadRecents();
+    const entry = list.find((item) => item.kind === 'text' && item.name.toLowerCase() === name.toLowerCase());
+    if (entry && entry.data !== content) { entry.data = content; localStorage.setItem(RECENTS_KEY, JSON.stringify(list)); }
+  } catch { /* ignore */ }
+  scheduleSave();
+}
+
+/** A file block is always followed by a line, so there is somewhere to keep typing. */
+function withLineAfterBlock(raw: string): string {
+  return splitRegexSegments(raw).at(-1)?.block ? `${raw}\n` : raw;
+}
+
+/** Adds a block under each line that names an existing .txt (anything after the name moves to a line below the block), drops blocks whose reference is gone, and pushes block edits to the files. */
+function syncRegexBlocks(raw: string, caret: number): { text: string; cursor: number } {
+  const segments = splitRegexSegments(raw);
+  const namesIn = (line: string): string[] => [...line.split('#')[0]!.matchAll(/@([^\s,#]+\.txt)(?=[\s,]|$)/giu)].map((match) => match[1]!);
+  const referenced = new Set<string>();
+  for (const segment of segments) if (!segment.block) for (const line of segment.text.split('\n')) for (const name of namesIn(line)) referenced.add(name.toLowerCase());
+  const kept = new Set<string>();
+  for (const segment of segments) if (segment.block && referenced.has(segment.name.toLowerCase())) kept.add(segment.name.toLowerCase());
+  const seen = new Set<string>();
+  let out = ''; let offset = 0; let cursor = -1;
+  const claim = (from: number, to: number, outStart: number): void => { if (cursor < 0 && caret >= from && caret <= to) cursor = outStart + caret - from; };
+  const newReference = (line: string): { name: string; end: number } | null => {
+    const head = line.split('#')[0]!;
+    for (const match of head.matchAll(/@([^\s,#]+\.txt)(?=[\s,]|$)/giu)) {
+      if (!kept.has(match[1]!.toLowerCase()) && lookupTextFile(match[1]!) !== undefined) return { name: match[1]!, end: match.index + match[0].length };
+    }
+    return null;
+  };
+  const emitLine = (line: string, lineStart: number): void => {
+    const hit = newReference(line);
+    if (!hit) { claim(lineStart, lineStart + line.length, out.length); out += line; return; }
+    const separator = /^[ \t]*,?[ \t]*/u.exec(line.slice(hit.end))![0];
+    const rest = line.slice(hit.end + separator.length);
+    claim(lineStart, lineStart + hit.end - 1, out.length);
+    out += `${line.slice(0, hit.end)},`;
+    if (cursor < 0 && caret >= lineStart + hit.end && caret <= lineStart + hit.end + separator.length) cursor = out.length;
+    kept.add(hit.name.toLowerCase()); seen.add(hit.name.toLowerCase());
+    out += makeRegexBlock(hit.name, lookupTextFile(hit.name)!, true);
+    if (!rest) return;
+    out += '\n';
+    emitLine(rest, lineStart + hit.end + separator.length);
+  };
+  for (const segment of segments) {
+    const start = offset; const end = offset + segment.text.length; offset = end;
+    if (segment.block) {
+      const key = segment.name.toLowerCase();
+      if (!kept.has(key) || seen.has(key)) { claim(start, end, out.length); continue; }
+      seen.add(key); claim(start, end, out.length); out += segment.text; continue;
+    }
+    let position = start;
+    segment.text.split('\n').forEach((line, index) => {
+      if (index > 0) { out += '\n'; position += 1; }
+      emitLine(line, position);
+      position += line.length;
+    });
+  }
+  out = withLineAfterBlock(out);
+  for (const segment of splitRegexSegments(out)) if (segment.block && lookupTextFile(segment.name) !== undefined && lookupTextFile(segment.name) !== segment.content) writeTextFile(segment.name, segment.content);
+  return { text: out, cursor: cursor < 0 ? out.length : cursor };
+}
+
+/** Pulls the latest content of each referenced .txt into its block. */
+function refreshRegexBlocks(raw: string): string {
+  return withLineAfterBlock(splitRegexSegments(raw).map((segment) => {
+    if (!segment.block) return segment.text;
+    const data = lookupTextFile(segment.name);
+    return data !== undefined && data !== segment.content ? makeRegexBlock(segment.name, data, segment.text.startsWith('\n')) : segment.text;
+  }).join(''));
+}
+
+/** Test strings of a regex tab with `@file.txt` references expanded; throws when a reference is missing. */
+function resolveRegexInputs(raw: string, depth = 0): string[] {
+  if (depth > 5) throw new Error('@file references are nested too deeply.');
+  return parseRegexTests(raw).values.flatMap((value) => {
+    if (!value.startsWith('@')) return [value];
+    const name = value.slice(1).trim();
+    const data = name ? lookupTextFile(name) : '';
+    if (data === undefined) throw new Error(`Referenced file "${value}" not found. Open it once so it can be used.`);
+    return resolveRegexInputs(data, depth + 1);
+  });
+}
+
+let regexSuggestion: string | null = null;
+
+/** Autocomplete of `@file.txt` names while the caret sits at the end of the test strings. */
+function updateRegexSuggestion(): void {
+  const field = $<HTMLTextAreaElement>('#regex-test');
+  const value = field.value;
+  regexSuggestion = null;
+  if (document.activeElement !== field || field.selectionStart !== value.length || field.selectionEnd !== value.length) return;
+  const boundary = Math.max(value.lastIndexOf(','), value.lastIndexOf('#'), value.lastIndexOf('\n'));
+  const at = value.lastIndexOf('@');
+  if (at <= boundary) return;
+  const token = value.slice(at + 1);
+  if (token.includes(' ')) return;
+  const candidates = loadRecents().filter((item) => item.kind === 'text');
+  const match = token ? candidates.find((item) => item.name.toLowerCase().startsWith(token.toLowerCase())) : candidates[0];
+  const completion = match?.name.slice(token.length);
+  if (completion) regexSuggestion = completion;
 }
 
 function syncRegexMirrorScroll(): void {
@@ -2402,21 +2676,50 @@ function syncRegexMirrorScroll(): void {
   mirror.scrollTop = field.scrollTop; mirror.scrollLeft = field.scrollLeft;
 }
 
+function evaluateRegexItems(values: string[], simulator: FSASimulator | null): Array<boolean | null> {
+  return values.map((value) => {
+    if (!simulator) return null;
+    if (!value.startsWith('@')) return simulator.simulate(value);
+    try {
+      const inputs = resolveRegexInputs(value);
+      return inputs.length ? inputs.every((input) => simulator.simulate(input)) : null;
+    } catch { return false; }
+  });
+}
+
+function regexPiecesHtml(pieces: RegexTestPiece[], verdicts: Array<boolean | null>): string {
+  return pieces.map((piece) => {
+    const verdict = piece.type === 'item' ? verdicts[piece.item] : null;
+    const cls = piece.type === 'comment' ? 'is-comment' : verdict === true ? 'is-accepted' : verdict === false ? 'is-rejected' : '';
+    return `<span class="${cls}">${escapeHtml(piece.text)}</span>`;
+  }).join('');
+}
+
 function refreshRegexBar(): void {
   const generate = $<HTMLButtonElement>('#regex-to-nfa');
   const editor = $<HTMLTextAreaElement>('#text-editor');
   const expression = editor.value.trim();
-  const { pieces, values } = parseRegexTests($<HTMLTextAreaElement>('#regex-test').value);
-  const verdicts: Array<boolean | null> = values.map(() => null);
+  const segments = splitRegexSegments($<HTMLTextAreaElement>('#regex-test').value);
+  const main = parseRegexTestParts(segments.filter((segment) => !segment.block).map((segment) => segment.text));
+  let simulator: FSASimulator | null = null;
   editor.classList.remove('is-invalid');
   try {
-    if (!expression) { generate.disabled = true; return; }
-    const simulator = new FSASimulator(regularExpressionToFSA(new RegularExpression(expression).asCheckedString()));
-    generate.disabled = false;
-    values.forEach((value, index) => { verdicts[index] = simulator.simulate(value); });
-  } catch {
-    verdicts.fill(null); editor.classList.add('is-invalid'); generate.disabled = true;
-  } finally { renderRegexMirror(pieces, verdicts); }
+    if (expression) simulator = new FSASimulator(regularExpressionToFSA(new RegularExpression(expression).asCheckedString()));
+  } catch { editor.classList.add('is-invalid'); }
+  generate.disabled = !simulator;
+  const verdicts = evaluateRegexItems(main.values, simulator);
+  updateRegexSuggestion();
+  let textIndex = 0;
+  const rule = (line: string): string => `<span class="regex-rule">${escapeHtml(line)}</span>`;
+  $('#regex-test-mirror').innerHTML = segments.map((segment) => {
+    if (!segment.block) return regexPiecesHtml(main.parts[textIndex++]!, verdicts);
+    const lead = segment.text.startsWith('\n') ? '\n' : '';
+    const lines = segment.text.slice(lead.length).split('\n');
+    if (lines.length < 3) return `${lead}${rule(lines[0]!)}\n${rule(lines.at(-1)!)}`;
+    const body = parseRegexTests(segment.content);
+    return `${lead}${rule(lines[0]!)}\n${regexPiecesHtml(body.pieces, evaluateRegexItems(body.values, simulator))}\n${rule(lines.at(-1)!)}`;
+  }).join('') + (regexSuggestion ? `<span class="ghost-rest">${escapeHtml(regexSuggestion)}</span>` : '') + '\u200b';
+  syncRegexMirrorScroll();
 }
 
 /** Layered layout: BFS layers, barycenter sweeps to cut edge crossings, then y-relaxation toward neighbours. */
@@ -2508,13 +2811,56 @@ function openNFAFromRegex(): void {
   } catch (error) { setStatus(error instanceof Error ? error.message : 'Invalid regular expression.', 'error'); }
 }
 $('#regex-to-nfa').addEventListener('click', openNFAFromRegex);
+let regexLastValue = '';
+let regexLastSelection = { start: 0, end: 0 };
+$('#regex-test').addEventListener('beforeinput', (event) => {
+  const field = $<HTMLTextAreaElement>('#regex-test');
+  regexLastSelection = { start: field.selectionStart, end: field.selectionEnd };
+  const lineBreak = event.inputType === 'insertLineBreak' || event.inputType === 'insertParagraph';
+  const beforeName = field.selectionStart === field.selectionEnd && /^@[^\s,#]+\.txt/iu.test(field.value.slice(field.selectionStart));
+  if (event.inputType.startsWith('insert') && field.selectionStart === field.selectionEnd) {
+    // A file name owns its line: nothing can be typed between it and its comma or right after that comma, and right before it only a line break (a blank line above) is allowed.
+    const before = field.value.slice(0, field.selectionStart); const after = field.value[field.selectionStart];
+    if (/@[^\s,#]+\.txt,$/iu.test(before) || (after === ',' && /@[^\s,#]+\.txt$/iu.test(before)) || (beforeName && !lineBreak)) { event.preventDefault(); return; }
+  }
+  if (!lineBreak) return;
+  const lineAt = (position: number): string => field.value.slice(field.value.lastIndexOf('\n', position - 1) + 1, (field.value.indexOf('\n', position) + 1 || field.value.length + 1) - 1);
+  if (/^─{3,}/u.test(lineAt(field.selectionStart)) || /^─{3,}/u.test(lineAt(field.selectionEnd))) { event.preventDefault(); return; }
+  if (beforeName) return;
+  // The line that names the file (right above its block) keeps its block attached: a line break there would split the name or push the block away.
+  const lineEnd = field.value.indexOf('\n', field.selectionEnd);
+  if (lineEnd >= 0 && REGEX_OPEN_RULE.test(lineAt(lineEnd + 1))) event.preventDefault();
+});
 $('#regex-test').addEventListener('input', () => {
   const field = $<HTMLTextAreaElement>('#regex-test');
-  const { text, cursor } = normalizeRegexTests(field.value, field.selectionStart);
-  if (text !== field.value) { field.value = text; field.setSelectionRange(cursor, cursor); }
+  if (!regexRulesIntact(regexLastValue, field.value)) {
+    field.value = regexLastValue;
+    field.setSelectionRange(regexLastSelection.start, regexLastSelection.end);
+    setStatus('The lines around a file’s strings can’t be edited.', 'error');
+    return;
+  }
+  const normalized = normalizeRegexField(field.value, field.selectionStart);
+  const synced = syncRegexBlocks(normalized.text, normalized.cursor);
+  if (synced.text !== field.value) { field.value = synced.text; field.setSelectionRange(synced.cursor, synced.cursor); }
+  const tab = activeTab();
+  if (tab) tab.tests = field.value;
+  regexLastValue = field.value;
+  scheduleSave();
   refreshRegexBar();
 });
 $('#regex-test').addEventListener('scroll', syncRegexMirrorScroll);
+$('#regex-test').addEventListener('keydown', (event) => {
+  if (!regexSuggestion || (event.key !== 'Tab' && event.key !== 'Enter')) return;
+  event.preventDefault();
+  const field = $<HTMLTextAreaElement>('#regex-test');
+  field.value += regexSuggestion;
+  field.setSelectionRange(field.value.length, field.value.length);
+  field.dispatchEvent(new Event('input'));
+});
+$('#regex-test').addEventListener('keyup', (event) => { if (event.key.startsWith('Arrow') || event.key === 'End' || event.key === 'Home') refreshRegexBar(); });
+$('#regex-test').addEventListener('click', refreshRegexBar);
+$('#regex-test').addEventListener('focus', refreshRegexBar);
+$('#regex-test').addEventListener('blur', refreshRegexBar);
 $('#text-editor').addEventListener('keydown', (event) => { if (isRegexMode() && event.key === 'Enter') event.preventDefault(); });
 let textSaveTimer = 0;
 $('#text-editor').addEventListener('input', () => {
@@ -2619,7 +2965,7 @@ $('#start-menu').addEventListener('click', (event) => {
   const existing = openTabs.find((tab) => tab.recentKey === key);
   if (existing) { activateTab(existing.id); return; }
   if (recent.kind === 'text' || recent.kind === 'regex') {
-    convertToTextTab(recent.name, recent.data, recent.kind);
+    convertToTextTab(recent.name, recent.data, recent.kind, recent.tests ?? '');
     const tab = activeTab();
     if (tab) tab.recentKey = key;
   } else {

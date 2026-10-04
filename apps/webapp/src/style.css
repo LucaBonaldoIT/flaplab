@@ -371,6 +371,7 @@ select { appearance: none; padding-right: 30px; }
 #regex-test::placeholder { color: #556158; }
 .regex-test-mirror { overflow: hidden; color: #d6ded8; pointer-events: none; }
 .regex-test-mirror .is-accepted { color: #a3d98a; }
+.regex-test-mirror .regex-rule { display: inline-block; vertical-align: top; width: calc(100% + 36px); height: 1.75em; margin: 0 -18px; overflow: hidden; color: transparent; background: linear-gradient(#46523f, #46523f) 0 50% / 100% 1px no-repeat; }
 .regex-test-mirror .is-comment { color: #6d7a70; }
 .regex-test-mirror .is-rejected { color: #e0786a; }
 #text-editor.is-invalid { color: #e0786a; }

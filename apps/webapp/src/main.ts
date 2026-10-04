@@ -54,11 +54,11 @@ app.innerHTML = `
     <div class="regex-bar" id="regex-bar" hidden>
       <div class="regex-bar-row">
         <span class="regex-bar-label">Regular expression</span>
-        <button class="button button-primary" id="regex-to-nfa" type="button" title="Thompson construction: opens the equivalent λ-NFA in a new tab">Generate λ-NFA</button>
+        <button class="button convert-dfa-button" id="regex-to-nfa" type="button" title="Thompson construction: opens the equivalent λ-NFA in a new tab">Generate λ-NFA</button>
       </div>
-      <div class="regex-hint">Use <code>+</code> for union, <code>*</code> for star, <code>!</code> for the empty string, and <code>\\</code> to escape.</div>
     </div>
     <textarea id="text-editor" hidden spellcheck="false" placeholder="Type anything…"></textarea>
+    <div class="regex-hint" id="regex-hint" hidden>Use <code>+</code> for union, <code>*</code> for star, <code>!</code> for the empty string, and <code>\\</code> to escape.</div>
     <div class="regex-tests" id="regex-tests" hidden>
       <div class="regex-bar-row">
         <label class="regex-bar-label" for="regex-test">Test strings</label>
@@ -1511,6 +1511,7 @@ function render(): void {
   if (textMode) editor.value = activeTab()?.text ?? '';
   $('#regex-bar').hidden = !regexMode;
   $('#regex-tests').hidden = !regexMode;
+  $('#regex-hint').hidden = !regexMode;
   editor.placeholder = regexMode ? '(a+b)*abb' : 'Type anything…';
   if (regexMode) refreshRegexBar();
   const overlay = $('#start-overlay');
@@ -2514,11 +2515,12 @@ $('#regex-test').addEventListener('input', () => {
   refreshRegexBar();
 });
 $('#regex-test').addEventListener('scroll', syncRegexMirrorScroll);
+$('#text-editor').addEventListener('keydown', (event) => { if (isRegexMode() && event.key === 'Enter') event.preventDefault(); });
 let textSaveTimer = 0;
 $('#text-editor').addEventListener('input', () => {
   if (isRegexMode()) {
     const editor = $<HTMLTextAreaElement>('#text-editor');
-    const rewritten = editor.value.replace(/(\\.)|!/gu, (match, escaped) => escaped ?? 'λ');
+    const rewritten = editor.value.replace(/[\r\n]+/gu, '').replace(/(\\.)|!/gu, (match, escaped) => escaped ?? 'λ');
     if (rewritten !== editor.value) {
       const cursor = editor.selectionStart;
       editor.value = rewritten;

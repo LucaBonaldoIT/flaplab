@@ -67,6 +67,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 
 .workspace { position: relative; display: grid; grid-template-columns: 250px minmax(400px, 1fr) 300px; grid-template-rows: minmax(0, 1fr); flex: 1; min-height: 0; }
 .workspace.is-text-mode, .workspace.is-start-mode { display: flex; }
+.workspace.is-regex-mode { flex-direction: column; }
 .workspace.is-text-mode .left-sidebar, .workspace.is-text-mode .canvas-column, .workspace.is-text-mode .right-sidebar,
 .workspace.is-start-mode .left-sidebar, .workspace.is-start-mode .canvas-column, .workspace.is-start-mode .right-sidebar { display: none; }
 
@@ -347,3 +348,27 @@ select { appearance: none; padding-right: 30px; }
   .statusbar > span:last-child { display: none; }
   .canvas-title div span { display: none; }
 }
+
+.regex-bar { display: flex; flex-direction: column; gap: 8px; padding: 12px 28px; border-bottom: 1px solid #29312b; background: #131815; }
+.regex-bar[hidden] { display: none; }
+.regex-bar-row { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.regex-bar-label { flex: none; color: #8d9a90; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; }
+.regex-bar-row .button { margin-left: auto; }
+.regex-hint { color: #6d7a70; font-size: 11px; }
+.regex-hint code { padding: 0 3px; border-radius: 3px; background: #101412; font-family: var(--mono); }
+
+.workspace.is-regex-mode #text-editor { flex: none; height: 92px; border-bottom: 1px solid #29312b; }
+.regex-tests { flex: 1 1 auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; padding-top: 12px; background: #101412; }
+.regex-tests[hidden] { display: none; }
+.regex-tests .regex-bar-row { padding: 0 28px; }
+
+.regex-test-wrap { position: relative; flex: 1 1 auto; min-height: 0; }
+#regex-test, .regex-test-mirror { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; padding: 8px 28px 24px; border: 0; font: 13px/1.75 var(--mono); letter-spacing: normal; white-space: pre; overflow: auto; tab-size: 4; }
+#regex-test { z-index: 1; resize: none; outline: 0; background: transparent; color: transparent; caret-color: var(--accent); }
+#regex-test::placeholder { color: #556158; }
+.regex-test-mirror { overflow: hidden; color: #d6ded8; pointer-events: none; }
+.regex-test-mirror .is-accepted { color: #a3d98a; }
+.regex-test-mirror .is-comment { color: #6d7a70; }
+.regex-test-mirror .is-rejected { color: #e0786a; }
+#text-editor.is-invalid { color: #e0786a; }
+.button:disabled { opacity: .38; cursor: default; pointer-events: none; }

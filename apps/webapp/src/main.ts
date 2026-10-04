@@ -14,12 +14,14 @@ import {
   PDASimulator,
   PDATransition,
   PushdownAutomaton,
+  RegularExpression,
   State,
   TMTransition,
   TuringMachine,
   TuringMachineSimulator,
   Transition,
   cloneAutomaton,
+  regularExpressionToFSA,
 } from '../../../packages/core/src/index.ts';
 import './style.css';
 
@@ -49,7 +51,23 @@ app.innerHTML = `
     <div class="start-overlay" id="start-overlay" hidden>
       <div class="start-menu" id="start-menu"></div>
     </div>
+    <div class="regex-bar" id="regex-bar" hidden>
+      <div class="regex-bar-row">
+        <span class="regex-bar-label">Regular expression</span>
+        <button class="button button-primary" id="regex-to-nfa" type="button" title="Thompson construction: opens the equivalent λ-NFA in a new tab">Generate λ-NFA</button>
+      </div>
+      <div class="regex-hint">Use <code>+</code> for union, <code>*</code> for star, <code>!</code> for the empty string, and <code>\\</code> to escape.</div>
+    </div>
     <textarea id="text-editor" hidden spellcheck="false" placeholder="Type anything…"></textarea>
+    <div class="regex-tests" id="regex-tests" hidden>
+      <div class="regex-bar-row">
+        <label class="regex-bar-label" for="regex-test">Test strings</label>
+      </div>
+      <div class="regex-test-wrap">
+        <div class="regex-test-mirror" id="regex-test-mirror" aria-hidden="true"></div>
+        <textarea id="regex-test" wrap="off" spellcheck="false" placeholder="Comma-separated strings (empty = λ), # for comments"></textarea>
+      </div>
+    </div>
     <aside class="sidebar left-sidebar">
       <div class="sidebar-heading"><span class="eyebrow">WORKSPACE</span><span class="machine-count" id="machine-count">0 states</span></div>
       <label class="field-label" for="machine-type">Machine type</label>
@@ -190,7 +208,7 @@ let tabCounter = 0;
 
 interface OpenTab {
   id: string;
-  kind: 'automaton' | 'text' | 'start';
+  kind: 'automaton' | 'text' | 'regex' | 'start';
   filename: string;
   machine: Machine;
   selectedState: State | null;
@@ -299,7 +317,7 @@ function persistWorkspace(): void {
       if (!tab.recentKey) continue;
       const index = recents.findIndex((entry) => `${entry.kind}:${entry.name.toLowerCase()}` === tab.recentKey);
       if (index < 0) continue;
-      const data = tab.kind === 'text' ? tab.text : JFFCodec.encode(tab.machine);
+      const data = tab.kind === 'text' || tab.kind === 'regex' ? tab.text : JFFCodec.encode(tab.machine);
       if (recents[index]!.data !== data) { recents[index]!.data = data; recentsChanged = true; }
     }
     if (recentsChanged) {
@@ -327,10 +345,10 @@ function restoreWorkspace(): boolean {
     for (const item of payload.tabs) {
       if (!item || typeof item.filename !== 'string' || typeof item.id !== 'string') continue;
       try {
-        if (item.kind === 'text') {
+        if (item.kind === 'text' || item.kind === 'regex') {
           const numericId = Number(String(item.id).slice(4));
           if (Number.isFinite(numericId)) tabCounter = Math.max(tabCounter, numericId);
-          openTextTab(item.filename, typeof item.text === 'string' ? item.text : '', String(item.id));
+          openTextTab(item.filename, typeof item.text === 'string' ? item.text : '', String(item.id), item.kind);
           const restored = activeTab()!;
           if (typeof item.input === 'string') restored.input = item.input;
           if (typeof item.stepInput === 'string') restored.stepInput = item.stepInput;
@@ -392,7 +410,12 @@ function refreshSimulations(): void {
 }
 
 function isTextMode(): boolean {
-  return activeTab()?.kind === 'text';
+  const kind = activeTab()?.kind;
+  return kind === 'text' || kind === 'regex';
+}
+
+function isRegexMode(): boolean {
+  return activeTab()?.kind === 'regex';
 }
 
 let editRefreshTimer = 0;
@@ -410,7 +433,7 @@ function scheduleEditRefresh(): void {
 
 const RECENTS_KEY = 'flaplab.recents.v1';
 
-interface RecentFile { name: string; kind: 'automaton' | 'text'; data: string; at: number; }
+interface RecentFile { name: string; kind: 'automaton' | 'text' | 'regex'; data: string; at: number; }
 
 function loadRecents(): RecentFile[] {
   try {
@@ -491,18 +514,12 @@ function buildEquivalentDFA(source: FiniteStateAutomaton): FiniteStateAutomaton 
   for (const [key, members] of subsets) {
     if (members.some((member) => source.isFinalState(member))) dfa.addFinalState(created.get(key)!);
   }
-  const byLevel = new Map<number, State[]>();
-  for (const [key, level] of levels) {
-    const list = byLevel.get(level) ?? []; list.push(created.get(key)!); byLevel.set(level, list);
-  }
-  for (const [level, list] of byLevel) {
-    list.forEach((state, index) => { state.point = { x: 240 + level * 220, y: 300 + (index - (list.length - 1) / 2) * 150 }; });
-  }
+  layoutAutomaton(dfa);
   return dfa;
 }
 
 
-function addRecent(entry: { name: string; kind: 'automaton' | 'text'; data: string }): void {
+function addRecent(entry: { name: string; kind: 'automaton' | 'text' | 'regex'; data: string }): void {
   try {
     const list = loadRecents().filter((item) => !(item.name === entry.name && item.kind === entry.kind));
     list.unshift({ ...entry, at: Date.now() });
@@ -607,7 +624,7 @@ function formatRecentTime(at: number): string {
 }
 
 function recentButton(item: RecentFile, index: number): string {
-  return `<button class="start-recent" data-index="${index}" type="button"><span class="start-recent-kind">${item.kind === 'text' ? 'TXT' : 'JFF'}</span><span class="start-recent-name">${escapeHtml(item.name)}</span><span class="start-recent-time">${formatRecentTime(item.at)}</span></button>`;
+  return `<button class="start-recent" data-index="${index}" type="button"><span class="start-recent-kind">${item.kind === 'text' ? 'TXT' : item.kind === 'regex' ? 'REG' : 'JFF'}</span><span class="start-recent-name">${escapeHtml(item.name)}</span><span class="start-recent-time">${formatRecentTime(item.at)}</span></button>`;
 }
 
 function renderStartMenu(): void {
@@ -618,7 +635,8 @@ function renderStartMenu(): void {
       <button class="start-back" data-view="main" type="button">‹ Back</button>
       <div class="start-title">New file</div>
       <button class="start-action" data-action="new-automaton" type="button"><span class="start-icon">◧</span> Automaton (.jff)</button>
-      <button class="start-action" data-action="new-text" type="button"><span class="start-icon">≡</span> Text file (.txt)</button>`;
+      <button class="start-action" data-action="new-text" type="button"><span class="start-icon">≡</span> Text file (.txt)</button>
+      <button class="start-action" data-action="new-regex" type="button"><span class="start-icon">∗</span> Regular expression (.jff)</button>`;
     return;
   }
   if (startMenuView === 'all') {
@@ -673,10 +691,10 @@ function openStartTab(tabId?: string): void {
   scheduleSave();
 }
 
-function convertToTextTab(filename: string, text: string): void {
+function convertToTextTab(filename: string, text: string, kind: 'text' | 'regex' = 'text'): void {
   const tab = activeTab();
   if (!tab) return;
-  tab.kind = 'text';
+  tab.kind = kind;
   tab.text = text;
   tab.machine = new FiniteStateAutomaton();
   tab.history = [cloneAutomaton(tab.machine)];
@@ -684,16 +702,16 @@ function convertToTextTab(filename: string, text: string): void {
   history = tab.history; historyIndex = 0;
   selectedState = null; selectedTransition = null;
   stepperSession = null;
-  tab.recentKey = `text:${filename.toLowerCase()}`;
+  tab.recentKey = `${kind}:${filename.toLowerCase()}`;
   setFilename(filename);
   render();
   refreshSimulations();
 }
 
-function openTextTab(filename: string, text: string, tabId?: string): void {
+function openTextTab(filename: string, text: string, tabId?: string, kind: 'text' | 'regex' = 'text'): void {
   openTab(new FiniteStateAutomaton(), filename, tabId);
   const tab = activeTab();
-  if (tab) { tab.kind = 'text'; tab.text = text; }
+  if (tab) { tab.kind = kind; tab.text = text; }
   currentFilename = filename;
   render();
   refreshSimulations();
@@ -1479,16 +1497,22 @@ function applyTextInputAttributes(): void {
 
 function render(): void {
   const kind = activeTab()?.kind;
-  const textMode = kind === 'text';
+  const regexMode = kind === 'regex';
+  const textMode = kind === 'text' || regexMode;
   const startMode = kind === 'start';
   const workspace = document.querySelector('.workspace');
   if (workspace) {
     workspace.classList.toggle('is-text-mode', textMode);
+    workspace.classList.toggle('is-regex-mode', regexMode);
     workspace.classList.toggle('is-start-mode', startMode);
   }
   const editor = $<HTMLTextAreaElement>('#text-editor');
   editor.hidden = !textMode;
   if (textMode) editor.value = activeTab()?.text ?? '';
+  $('#regex-bar').hidden = !regexMode;
+  $('#regex-tests').hidden = !regexMode;
+  editor.placeholder = regexMode ? '(a+b)*abb' : 'Type anything…';
+  if (regexMode) refreshRegexBar();
   const overlay = $('#start-overlay');
   if (startMode) { renderStartMenu(); overlay.hidden = false; } else { overlay.hidden = true; startMenuView = 'main'; }
   renderStateSelectors(); renderTransitionFields(); renderSimulatorOptions(); renderMachineSettings(); renderStateList(); renderStateEditor(); renderSelectedTransitionEditor(); renderTransitions(); renderGraph();
@@ -2003,6 +2027,15 @@ function loadExample(type: MachineType): void {
   setStatus(`Loaded example: ${entry.title}.`); showToast('Example machine loaded');
 }
 
+function fitCanvasToView(): void {
+  if (!machine.states.length) return;
+  const xs = machine.states.map((state) => state.point.x); const ys = machine.states.map((state) => state.point.y);
+  const minX = Math.min(...xs) - 120; const minY = Math.min(...ys) - 100;
+  const width = Math.max(420, Math.max(...xs) - Math.min(...xs) + 240);
+  const height = Math.max(320, Math.max(...ys) - Math.min(...ys) + 200);
+  setCanvasView(minX, minY, width, height);
+}
+
 function openEquivalentDFA(): void {
   if (!(machine instanceof FiniteStateAutomaton)) return;
   const dfa = buildEquivalentDFA(machine);
@@ -2015,6 +2048,7 @@ function openEquivalentDFA(): void {
   addRecent({ name, kind: 'automaton', data: JFFCodec.encode(machine) });
   if (startTabId) closeTab(startTabId);
   render(); commitHistory(); updateHistoryButtons();
+  fitCanvasToView();
   refreshSimulations();
   setStatus('Equivalent DFA opened in a new tab.', 'success'); showToast('Equivalent DFA generated');
 }
@@ -2022,8 +2056,19 @@ function openEquivalentDFA(): void {
 function openJff(file: File): void {
   file.text().then((contents) => {
     const structure = JFFCodec.decode(contents);
+    if (structure instanceof RegularExpression) {
+      const startTabId = activeTab()?.kind === 'start' ? activeTabId : '';
+      const expression = structure.asString();
+      openTextTab(file.name, expression, undefined, 'regex');
+      const tab = activeTab();
+      if (tab) tab.recentKey = `regex:${file.name.toLowerCase()}`;
+      if (startTabId) closeTab(startTabId);
+      setStatus(`Opened ${file.name}.`, 'success'); showToast('Regular expression opened');
+      addRecent({ name: file.name, kind: 'regex', data: expression });
+      return;
+    }
     if (!isMachineStructure(structure)) {
-      throw new Error('This structure is valid JFLAP data but is not an automaton.');
+      throw new Error('This structure is valid JFLAP data but is not an automaton or regular expression.');
     }
     const startTabId = activeTab()?.kind === 'start' ? activeTabId : '';
     openTab(structure, file.name);
@@ -2058,6 +2103,16 @@ function openFile(file: File): void {
 
 function saveJff(): void {
   try {
+    if (isRegexMode()) {
+      const expression = $<HTMLTextAreaElement>('#text-editor').value.trim();
+      const url = URL.createObjectURL(new Blob([JFFCodec.encode(new RegularExpression(expression))], { type: 'application/xml;charset=utf-8' }));
+      const link = document.createElement('a'); link.href = url;
+      const base = currentFilename.replace(/\.(jff|xml)$/iu, '').replace(/[<>:"/\\|?*\u0000-\u001f]/gu, '_').trim();
+      link.download = `${base || 'expression'}.jff`;
+      link.click(); URL.revokeObjectURL(url);
+      setStatus('Exported JFLAP XML.', 'success'); showToast('JFF file exported');
+      return;
+    }
     if (isTextMode()) {
       const text = $<HTMLTextAreaElement>('#text-editor').value;
       const url = URL.createObjectURL(new Blob([text], { type: 'text/plain;charset=utf-8' }));
@@ -2288,10 +2343,191 @@ $('#step-input').addEventListener('keydown', (event) => { if (event.key === 'Ent
 $('#step-forward').addEventListener('click', () => { if (stepperSession && stepperSession.index < stepperSession.views.length - 1) { stepperSession.index++; renderStepper(); } });
 $('#step-back').addEventListener('click', () => { if (stepperSession && stepperSession.index > 0) { stepperSession.index--; renderStepper(); } });
 $('#input-string').addEventListener('input', scheduleSave);
+interface RegexTestPiece { text: string; type: 'item' | 'comma' | 'comment'; item: number; }
+
+/** Splits test-string text into comma-separated items; `#` starts a comment that runs to the end of the line. */
+function parseRegexTests(raw: string): { pieces: RegexTestPiece[]; values: string[] } {
+  const pieces: RegexTestPiece[] = [];
+  const values: string[] = [''];
+  let item = 0; let comment = false;
+  for (const char of raw) {
+    let type: RegexTestPiece['type'] = 'item';
+    if (comment) { if (char === '\n') comment = false; else type = 'comment'; }
+    else if (char === '#') { comment = true; type = 'comment'; }
+    else if (char === ',') type = 'comma';
+    const last = pieces.at(-1);
+    if (last && last.type === type && last.item === item) last.text += char; else pieces.push({ text: char, type, item });
+    if (type === 'item') values[item] += char;
+    if (type === 'comma') { item++; values.push(''); }
+  }
+  const cleaned = values.map((value) => value.replace(/[\r\n]/gu, '').trim().replace(/^(?:!|λ|ε)$/u, ''));
+  if (cleaned.at(-1) === '') cleaned.pop();
+  return { pieces, values: cleaned };
+}
+
+/** Rewrites `!` to λ and fills empty (non-trailing) items with λ, keeping the cursor in place. */
+function normalizeRegexTests(raw: string, cursor: number): { text: string; cursor: number } {
+  let text = ''; let comment = false; let hasContent = false;
+  let itemStart = 0; let itemStartOut = 0; let moved = cursor;
+  for (let index = 0; index < raw.length; index++) {
+    const char = raw[index]!;
+    if (comment) { if (char === '\n') comment = false; text += char; continue; }
+    if (char === '#') { comment = true; text += char; continue; }
+    if (char === ',') {
+      if (!hasContent) {
+        text = `${text.slice(0, itemStartOut)}λ${text.slice(itemStartOut)}`;
+        if (itemStart <= cursor) moved++;
+      }
+      text += char; hasContent = false; itemStart = index + 1; itemStartOut = text.length;
+      continue;
+    }
+    if (!/\s/u.test(char)) hasContent = true;
+    text += char === '!' ? 'λ' : char;
+  }
+  return { text, cursor: moved };
+}
+
+function renderRegexMirror(pieces: RegexTestPiece[], verdicts: Array<boolean | null>): void {
+  $('#regex-test-mirror').innerHTML = pieces.map((piece) => {
+    const verdict = piece.type === 'item' ? verdicts[piece.item] : null;
+    const cls = piece.type === 'comment' ? 'is-comment' : verdict === true ? 'is-accepted' : verdict === false ? 'is-rejected' : '';
+    return `<span class="${cls}">${escapeHtml(piece.text)}</span>`;
+  }).join('') + '\u200b';
+  syncRegexMirrorScroll();
+}
+
+function syncRegexMirrorScroll(): void {
+  const field = $<HTMLTextAreaElement>('#regex-test'); const mirror = $('#regex-test-mirror');
+  mirror.scrollTop = field.scrollTop; mirror.scrollLeft = field.scrollLeft;
+}
+
+function refreshRegexBar(): void {
+  const generate = $<HTMLButtonElement>('#regex-to-nfa');
+  const editor = $<HTMLTextAreaElement>('#text-editor');
+  const expression = editor.value.trim();
+  const { pieces, values } = parseRegexTests($<HTMLTextAreaElement>('#regex-test').value);
+  const verdicts: Array<boolean | null> = values.map(() => null);
+  editor.classList.remove('is-invalid');
+  try {
+    if (!expression) { generate.disabled = true; return; }
+    const simulator = new FSASimulator(regularExpressionToFSA(new RegularExpression(expression).asCheckedString()));
+    generate.disabled = false;
+    values.forEach((value, index) => { verdicts[index] = simulator.simulate(value); });
+  } catch {
+    verdicts.fill(null); editor.classList.add('is-invalid'); generate.disabled = true;
+  } finally { renderRegexMirror(pieces, verdicts); }
+}
+
+/** Layered layout: BFS layers, barycenter sweeps to cut edge crossings, then y-relaxation toward neighbours. */
+function layoutAutomaton(automaton: FiniteStateAutomaton): void {
+  const states = [...automaton.states];
+  if (!states.length) return;
+  const level = new Map<State, number>();
+  const queue: State[] = [];
+  if (automaton.initialState) { level.set(automaton.initialState, 0); queue.push(automaton.initialState); }
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const current = queue[cursor]!;
+    for (const transition of automaton.getTransitionsFrom(current)) {
+      if (!level.has(transition.to)) { level.set(transition.to, level.get(current)! + 1); queue.push(transition.to); }
+    }
+  }
+  const unreached = Math.max(-1, ...level.values()) + 1;
+  for (const state of states) if (!level.has(state)) level.set(state, unreached);
+  const layers: State[][] = [];
+  const discovery = new Map<State, number>([...queue, ...states.filter((state) => !queue.includes(state))].map((state, index) => [state, index]));
+  for (const state of [...states].sort((a, b) => discovery.get(a)! - discovery.get(b)!)) (layers[level.get(state)!] ??= []).push(state);
+  const edges = automaton.transitions.filter((item) => item.from !== item.to).map((item) => [item.from, item.to] as const);
+  const neighbours = new Map<State, State[]>(states.map((state) => [state, []]));
+  for (const [from, to] of edges) { neighbours.get(from)!.push(to); neighbours.get(to)!.push(from); }
+  const position = new Map<State, number>();
+  const reindex = (): void => { for (const layer of layers) layer.forEach((state, index) => position.set(state, layer.length > 1 ? index / (layer.length - 1) : 0.5)); };
+  const crossings = (): number => {
+    const adjacent = edges.filter(([from, to]) => Math.abs(level.get(from)! - level.get(to)!) === 1).map(([from, to]) => level.get(from)! < level.get(to)! ? [from, to] as const : [to, from] as const);
+    let total = 0;
+    for (let a = 0; a < adjacent.length; a++) for (let b = a + 1; b < adjacent.length; b++) {
+      const [f1, t1] = adjacent[a]!; const [f2, t2] = adjacent[b]!;
+      if (level.get(f1) !== level.get(f2)) continue;
+      if ((position.get(f1)! - position.get(f2)!) * (position.get(t1)! - position.get(t2)!) < 0) total++;
+    }
+    return total;
+  };
+  reindex();
+  let best = layers.map((layer) => [...layer]); let bestCrossings = crossings();
+  const sweep = (order: number[], towards: (neighbourLevel: number, own: number) => boolean): void => {
+    for (const index of order) {
+      const layer = layers[index]!;
+      const score = new Map<State, number>();
+      for (const state of layer) {
+        const refs = neighbours.get(state)!.filter((other) => towards(level.get(other)!, index));
+        score.set(state, refs.length ? refs.reduce((sum, other) => sum + position.get(other)!, 0) / refs.length : position.get(state)!);
+      }
+      layer.sort((a, b) => score.get(a)! - score.get(b)! || discovery.get(a)! - discovery.get(b)!);
+      layer.forEach((state, i) => position.set(state, layer.length > 1 ? i / (layer.length - 1) : 0.5));
+    }
+  };
+  const indices = layers.map((_, index) => index);
+  for (let round = 0; round < 12; round++) {
+    sweep(indices.slice(1), (other, own) => other < own);
+    sweep(indices.slice(0, -1).reverse(), (other, own) => other > own);
+    const count = crossings();
+    if (count < bestCrossings) { bestCrossings = count; best = layers.map((layer) => [...layer]); }
+    if (bestCrossings === 0) break;
+  }
+  best.forEach((layer, index) => { layers[index] = layer; });
+  const gapY = 120; const gapX = 190;
+  const y = new Map<State, number>();
+  for (const layer of layers) layer.forEach((state, index) => y.set(state, (index - (layer.length - 1) / 2) * gapY));
+  for (let round = 0; round < 10; round++) {
+    for (const layer of round % 2 ? [...layers].reverse() : layers) {
+      const desired = layer.map((state) => { const refs = neighbours.get(state)!; return refs.length ? refs.reduce((sum, other) => sum + y.get(other)!, 0) / refs.length : y.get(state)!; });
+      const placed: number[] = [];
+      desired.forEach((value, index) => placed.push(index ? Math.max(value, placed[index - 1]! + gapY) : value));
+      const shift = desired.reduce((sum, value, index) => sum + value - placed[index]!, 0) / (desired.length || 1);
+      layer.forEach((state, index) => y.set(state, placed[index]! + shift));
+    }
+  }
+  const centre = [...y.values()].reduce((sum, value) => sum + value, 0) / y.size;
+  layers.forEach((layer, index) => layer.forEach((state) => { state.point = { x: 140 + index * gapX, y: 300 + y.get(state)! - centre }; }));
+}
+
+function openNFAFromRegex(): void {
+  const expression = $<HTMLTextAreaElement>('#text-editor').value.trim();
+  try {
+    const nfa = regularExpressionToFSA(new RegularExpression(expression).asCheckedString());
+    layoutAutomaton(nfa);
+    const name = `${currentFilename.replace(/\.(jff|xml)$/iu, '') || 'expression'}_nfa.jff`;
+    openTab(nfa, name);
+    const tab = activeTab();
+    if (tab) tab.recentKey = `automaton:${name.toLowerCase()}`;
+    addRecent({ name, kind: 'automaton', data: JFFCodec.encode(machine) });
+    render(); commitHistory(); updateHistoryButtons();
+    fitCanvasToView();
+    refreshSimulations();
+    setStatus('λ-NFA opened in a new tab.', 'success'); showToast('λ-NFA generated');
+  } catch (error) { setStatus(error instanceof Error ? error.message : 'Invalid regular expression.', 'error'); }
+}
+$('#regex-to-nfa').addEventListener('click', openNFAFromRegex);
+$('#regex-test').addEventListener('input', () => {
+  const field = $<HTMLTextAreaElement>('#regex-test');
+  const { text, cursor } = normalizeRegexTests(field.value, field.selectionStart);
+  if (text !== field.value) { field.value = text; field.setSelectionRange(cursor, cursor); }
+  refreshRegexBar();
+});
+$('#regex-test').addEventListener('scroll', syncRegexMirrorScroll);
 let textSaveTimer = 0;
 $('#text-editor').addEventListener('input', () => {
+  if (isRegexMode()) {
+    const editor = $<HTMLTextAreaElement>('#text-editor');
+    const rewritten = editor.value.replace(/(\\.)|!/gu, (match, escaped) => escaped ?? 'λ');
+    if (rewritten !== editor.value) {
+      const cursor = editor.selectionStart;
+      editor.value = rewritten;
+      editor.setSelectionRange(cursor, cursor);
+    }
+  }
   const tab = activeTab();
   if (tab) tab.text = ($<HTMLTextAreaElement>('#text-editor')).value;
+  if (isRegexMode()) refreshRegexBar();
   window.clearTimeout(textSaveTimer);
   textSaveTimer = window.setTimeout(persistWorkspace, 600);
 });
@@ -2366,6 +2602,13 @@ $('#start-menu').addEventListener('click', (event) => {
     setStatus('New text file created.');
     return;
   }
+  if (action === 'new-regex') {
+    const name = generateMachineName();
+    convertToTextTab(name, '', 'regex');
+    addRecent({ name, kind: 'regex', data: '' });
+    setStatus('New regular expression created.');
+    return;
+  }
   const index = button.getAttribute('data-index');
   if (index === null) return;
   const recent = loadRecents()[Number(index)];
@@ -2373,8 +2616,8 @@ $('#start-menu').addEventListener('click', (event) => {
   const key = `${recent.kind}:${recent.name.toLowerCase()}`;
   const existing = openTabs.find((tab) => tab.recentKey === key);
   if (existing) { activateTab(existing.id); return; }
-  if (recent.kind === 'text') {
-    convertToTextTab(recent.name, recent.data);
+  if (recent.kind === 'text' || recent.kind === 'regex') {
+    convertToTextTab(recent.name, recent.data, recent.kind);
     const tab = activeTab();
     if (tab) tab.recentKey = key;
   } else {
@@ -2409,14 +2652,7 @@ document.addEventListener('click', (event) => {
 });
 $('#zoom-in').addEventListener('click', () => zoomAt(1.2));
 $('#zoom-out').addEventListener('click', () => zoomAt(1 / 1.2));
-$('#fit-canvas').addEventListener('click', () => {
-  if (!machine.states.length) return;
-  const xs = machine.states.map((state) => state.point.x); const ys = machine.states.map((state) => state.point.y);
-  const minX = Math.min(...xs) - 120; const minY = Math.min(...ys) - 100;
-  const width = Math.max(420, Math.max(...xs) - Math.min(...xs) + 240);
-  const height = Math.max(320, Math.max(...ys) - Math.min(...ys) + 200);
-  setCanvasView(minX, minY, width, height);
-});
+$('#fit-canvas').addEventListener('click', fitCanvasToView);
 $('#clear-transitions').addEventListener('click', () => { for (const transition of [...machine.transitions]) machine.removeTransition(transition as never); render(); commitHistory(); setStatus('All transitions cleared.'); });
 $('#undo-action').addEventListener('click', () => restoreHistory(historyIndex - 1));
 $('#redo-action').addEventListener('click', () => restoreHistory(historyIndex + 1));

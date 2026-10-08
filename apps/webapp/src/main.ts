@@ -23,7 +23,11 @@ import {
   cloneAutomaton,
   regularExpressionToFSA,
 } from '../../../packages/core/src/index.ts';
+import '@lucabonaldo/design/fonts.css';
+import '@lucabonaldo/design/tokens.css';
+import '@lucabonaldo/design/components.css';
 import './style.css';
+import { initTheme } from '@lucabonaldo/design';
 
 type Machine = FiniteStateAutomaton | PushdownAutomaton | TuringMachine | MealyMachine | MooreMachine;
 type MachineType = 'fa' | 'pda' | 'turing' | 'mealy' | 'moore';
@@ -43,6 +47,7 @@ app.innerHTML = `
       <button class="button button-quiet" id="new-machine" title="Create a new machine">New</button>
       <label class="button button-quiet file-button" for="open-file">Open<input id="open-file" type="file" /></label>
       <button class="button button-primary" id="save-file" title="Save (Ctrl/⌘ S)">Export</button>
+      <button class="button button-quiet theme-button ds-theme-toggle" type="button" title="Toggle dark theme" aria-label="Dark theme"></button>
       <a class="button button-quiet github-link" href="https://github.com/LucaBonaldoIT/flaplab" target="_blank" rel="noopener noreferrer" title="View on GitHub" aria-label="View on GitHub"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27s1.36.09 2 .27c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg></a>
     </div>
   </header>
@@ -121,11 +126,11 @@ app.innerHTML = `
       <div class="canvas-shell" id="canvas-shell">
         <svg id="automaton-canvas" viewBox="0 0 1000 640" role="img" aria-label="Pannable automaton editing canvas" xmlns="http://www.w3.org/2000/svg">
           <defs>
-            <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" fill="#6f665c" /></marker>
-            <marker id="arrowhead-selected" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" fill="#b02e0c" /></marker>
-            <marker id="arrowhead-step-incoming" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" fill="#a3d98a" /></marker>
-            <marker id="arrowhead-step-outgoing" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" fill="#e3c25c" /></marker>
-            <marker id="start-arrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" fill="#b02e0c" /></marker>
+            <marker id="arrowhead" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" style="fill: var(--edge-color)" /></marker>
+            <marker id="arrowhead-selected" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" style="fill: var(--accent-fill)" /></marker>
+            <marker id="arrowhead-step-incoming" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" style="fill: var(--fl-go)" /></marker>
+            <marker id="arrowhead-step-outgoing" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" style="fill: var(--fl-step)" /></marker>
+            <marker id="start-arrow" markerWidth="10" markerHeight="8" refX="8" refY="4" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L9,4 L0,8 z" style="fill: var(--accent-fill)" /></marker>
           </defs>
           <g id="graph-layer"></g>
         </svg>
@@ -187,6 +192,7 @@ app.innerHTML = `
   <div class="drop-overlay" id="drop-overlay" hidden><div class="drop-card">⇣ Drop a <b>.jff</b> or <b>.txt</b> file to open it</div></div>
   <div class="toast-region" id="toast-region" aria-live="polite"></div>
 `;
+initTheme();
 
 let machine: Machine = new FiniteStateAutomaton();
 let selectedState: State | null = null;

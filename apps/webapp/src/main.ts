@@ -517,9 +517,12 @@ function hasEquivalentStates(): boolean {
           if (!ti || !tj) { mark(i, j); changed = true; break; }
           if (marked[index.get(ti)!]![index.get(tj)!]) { mark(i, j); changed = true; break; }
         }
-        if (marked[i]![j] === false) return true; // indistinguishable pair found
       }
     }
+  }
+  // After the fixpoint, any surviving unmarked pair is equivalent.
+  for (let i = 0; i < states.length; i++) {
+    for (let j = 0; j < i; j++) if (!marked[i]![j]) return true;
   }
   return false;
 }

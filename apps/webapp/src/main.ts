@@ -93,6 +93,11 @@ app.innerHTML = `
         <div class="transition-table-wrap" id="transition-table-wrap"></div>
       </section>
 
+      <section class="transition-table-section" id="equivalence-table-section" hidden>
+        <div class="section-heading"><span>EQUIVALENCE TABLE</span></div>
+        <div class="transition-table-wrap" id="equivalence-table-wrap"></div>
+      </section>
+
       <div class="editor-card" id="state-editor">
         <div class="editor-card-heading"><span class="editor-indicator"></span><span id="selected-title">SELECT A STATE</span></div>
         <div id="state-editor-fields" class="muted-hint">Select a state on the canvas to edit its properties.</div>
@@ -472,6 +477,51 @@ function renderAutomatonMode(): void {
   display.textContent = mode === 'dfa' ? 'DFA' : mode === 'nfa' ? 'NFA' : 'λ-NFA';
   const button = $('#convert-dfa');
   if (button) button.hidden = mode === 'dfa';
+  const minifyButton = $('#minify-dfa');
+  if (minifyButton) minifyButton.hidden = mode !== 'dfa' || !hasEquivalentStates();
+}
+
+/** True when the current DFA has two distinct reachable states that table filling cannot distinguish (i.e. minimization would merge something). */
+function hasEquivalentStates(): boolean {
+  if (!(machine instanceof FiniteStateAutomaton)) return false;
+  const source = machine as FiniteStateAutomaton;
+  const reachable = new Set<State>();
+  if (source.initialState) {
+    reachable.add(source.initialState);
+    const queue = [source.initialState];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (const transition of source.transitions) {
+        if (transition instanceof FSATransition && transition.from === current && transition.label !== '' && !reachable.has(transition.to)) { reachable.add(transition.to); queue.push(transition.to); }
+      }
+    }
+  }
+  const states = source.states.filter((state) => reachable.has(state));
+  const symbols = [...new Set(source.transitions.filter((item): item is FSATransition => item instanceof FSATransition && item.label !== '').map((item) => item.label))];
+  const index = new Map<State, number>(states.map((state, i) => [state, i] as const));
+  const marked: boolean[][] = Array.from({ length: states.length }, () => new Array(states.length).fill(false));
+  const mark = (a: number, b: number): void => { marked[a]![b] = true; marked[b]![a] = true; };
+  for (let i = 0; i < states.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (source.isFinalState(states[i]!) !== source.isFinalState(states[j]!)) mark(i, j);
+    }
+  }
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < states.length; i++) {
+      for (let j = 0; j < i; j++) {
+        if (marked[i]![j]) continue;
+        for (const symbol of symbols) {
+          const ti = source.transitions.filter((transition): transition is FSATransition => transition instanceof FSATransition && transition.from === states[i] && transition.label === symbol).map((transition) => transition.to)[0];
+          const tj = source.transitions.filter((transition): transition is FSATransition => transition instanceof FSATransition && transition.from === states[j] && transition.label === symbol).map((transition) => transition.to)[0];
+          if (!ti || !tj) { mark(i, j); changed = true; break; }
+          if (marked[index.get(ti)!]![index.get(tj)!]) { mark(i, j); changed = true; break; }
+        }
+        if (marked[i]![j] === false) return true; // indistinguishable pair found
+      }
+    }
+  }
+  return false;
 }
 
 function buildEquivalentDFA(source: FiniteStateAutomaton): FiniteStateAutomaton {
@@ -1011,8 +1061,9 @@ function renderSimulatorOptions(): void {
 function renderMachineSettings(): void {
   const settings = $('#machine-settings');
   if (machine instanceof FiniteStateAutomaton) {
-    settings.innerHTML = `<div class="machine-setting"><span class="field-label">Automaton type</span><div class="detected-type" id="detected-automaton-type">λ-NFA</div><button class="button convert-dfa-button" id="convert-dfa" hidden title="Subset construction: opens the equivalent DFA in a new tab">Generate DFA</button></div>`;
+    settings.innerHTML = `<div class="machine-setting"><span class="field-label">Automaton type</span><div class="detected-type" id="detected-automaton-type">λ-NFA</div><button class="button convert-dfa-button" id="convert-dfa" hidden title="Subset construction: opens the equivalent DFA in a new tab">Generate DFA</button><button class="button convert-dfa-button" id="minify-dfa" hidden title="Removes equivalent and unreachable states: opens the minimal DFA in a new tab">Minify DFA</button></div>`;
     $('#convert-dfa').addEventListener('click', openEquivalentDFA);
+    $('#minify-dfa').addEventListener('click', openMinifiedDFA);
     renderAutomatonMode();
     return;
   }
@@ -1274,22 +1325,100 @@ function renderTransitionTable(): void {
   section.hidden = !isFSA;
   if (!isFSA) return;
   if (!machine.states.length) { wrap.innerHTML = '<div class="empty-list">Add a state to build the table.</div>'; return; }
-  const automaton = machine;
+  const automaton = machine as FiniteStateAutomaton;
   const symbols: string[] = [];
   for (const transition of automaton.transitions) {
     if (transition instanceof FSATransition && !symbols.includes(transition.label)) symbols.push(transition.label);
   }
   symbols.sort((left, right) => (left === '' ? -1 : right === '' ? 1 : left.localeCompare(right)));
-  const stateHeader = (state: State): string => `${automaton.initialState === state ? '→' : ''}${automaton.isFinalState(state) ? '*' : ''}${state.name}`;
   const body = automaton.states.map((state) => {
     const cells = symbols.map((symbol) => {
       const targets = [...new Set(automaton.transitions.filter((transition) => transition instanceof FSATransition && transition.from === state && transition.label === symbol).map((transition) => transition.to.name))];
       if (!targets.length) return '<td class="cell-empty">∅</td>';
       return `<td>${escapeHtml(targets.length === 1 ? targets[0]! : `{${targets.join(', ')}}`)}</td>`;
     });
-    return `<tr><th scope="row">${escapeHtml(stateHeader(state))}</th>${cells.join('')}</tr>`;
+    return `<tr><th scope="row">${escapeHtml(stateHeader(automaton, state))}</th>${cells.join('')}</tr>`;
   });
   wrap.innerHTML = `<table class="transition-table"><thead><tr><th>Q \\ Σ</th>${symbols.map((symbol) => `<th>${escapeHtml(symbol || 'λ')}</th>`).join('')}</tr></thead><tbody>${body.join('')}</tbody></table>`;
+  renderEquivalenceTable();
+}
+
+function stateHeader(automaton: FiniteStateAutomaton, state: State): string {
+  return `${automaton.initialState === state ? '→' : ''}${automaton.isFinalState(state) ? '*' : ''}${state.name}`;
+}
+
+function renderEquivalenceTable(): void {
+  const section = $('#equivalence-table-section');
+  const wrap = $('#equivalence-table-wrap');
+  if (!section || !wrap) return;
+  const isFSA = machine instanceof FiniteStateAutomaton;
+  section.hidden = !isFSA;
+  if (!isFSA) return;
+  const automaton = machine as FiniteStateAutomaton;
+  const states = automaton.states;
+  if (states.length < 2) { wrap.innerHTML = '<div class="empty-list">Add at least two states to compare equivalence.</div>'; return; }
+
+  // Table-filling algorithm: mark pairs whose transitions lead to distinguishable
+  // states (pair containing one final and one non-final), then propagate marks
+  // until no pair changes. X on a cell means the pair is NOT equivalent.
+  const index = new Map<State, number>(states.map((state, i) => [state, i] as const));
+  const marked: boolean[][] = Array.from({ length: states.length }, () => new Array(states.length).fill(false));
+  const mark = (a: number, b: number): void => { marked[a]![b] = true; marked[b]![a] = true; };
+  const targetsOf = (state: State, symbol: string): Set<State> =>
+    new Set(automaton.transitions.filter((transition): transition is FSATransition => transition instanceof FSATransition && transition.from === state && transition.label === symbol).map((transition) => transition.to));
+
+  for (let i = 0; i < states.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (automaton.isFinalState(states[i]!) !== automaton.isFinalState(states[j]!)) mark(i, j);
+    }
+  }
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < states.length; i++) {
+      for (let j = 0; j < i; j++) {
+        if (marked[i]![j]) continue;
+        const si = states[i]!;
+        const sj = states[j]!;
+        for (const symbol of symbolsOf(automaton)) {
+          const ti = targetsOf(si, symbol);
+          const tj = targetsOf(sj, symbol);
+          // Distinguishable if exactly one side has a move for this symbol,
+          // or both sides move into a pair that is already marked.
+          if (ti.size === 0 && tj.size === 0) continue;
+          if (ti.size === 0 || tj.size === 0) { mark(i, j); changed = true; break; }
+          for (const a of ti) {
+            for (const b of tj) {
+              if (!marked[index.get(a)!]![index.get(b)!]) continue;
+              mark(i, j); changed = true; break;
+            }
+            if (marked[i]![j]) break;
+          }
+          if (marked[i]![j]) break;
+        }
+      }
+    }
+  }
+
+  // Half-pyramid layout (no main diagonal): row headers B..F down the left,
+  // column headers A..E along the bottom; cell (row X, col Y) compares X with Y
+  // and exists only for states Y earlier than X, so the triangle widens downward.
+  const rows = states.slice(1).map((rowState, i) => {
+    const row = states.slice(0, i + 1).map((colState) => {
+      const isMarked = marked[i + 1]![states.indexOf(colState)];
+      return `<td class="eq-cell${isMarked ? ' eq-marked' : ''}">${isMarked ? 'X' : ''}</td>`;
+    });
+    return `<tr><th scope="row">${escapeHtml(stateHeader(automaton, rowState))}</th>${row.join('')}</tr>`;
+  });
+  const footer = states.slice(0, -1).map((colState) => `<th>${escapeHtml(stateHeader(automaton, colState))}</th>`).join('');
+  wrap.innerHTML = `<table class="transition-table equivalence-table"><tbody>${rows.join('')}</tbody><tfoot><tr><th></th>${footer}</tr></tfoot></table>`;
+}
+
+function symbolsOf(automaton: FiniteStateAutomaton): string[] {
+  const symbols: string[] = [];
+  for (const transition of automaton.transitions) {
+    if (transition instanceof FSATransition && !symbols.includes(transition.label)) symbols.push(transition.label);
+  }
+  return symbols;
 }
 
 function renderSelectedTransitionEditor(): void {
@@ -2121,6 +2250,106 @@ function openEquivalentDFA(): void {
   setStatus('Equivalent DFA opened in a new tab.', 'success'); showToast('Equivalent DFA generated');
 }
 
+function minimizeDFA(source: FiniteStateAutomaton): FiniteStateAutomaton {
+  // Hopcroft-style partition refinement via table filling: pairs of states are
+  // marked distinguishable (final vs non-final seeds, then propagation), and
+  // unmarked pairs are merged. Unreachable states are dropped first.
+  const symbols = [...new Set(source.transitions.filter((item): item is FSATransition => item instanceof FSATransition && item.label !== '').map((item) => item.label))].sort((left, right) => left.localeCompare(right));
+  const reachable = new Set<State>();
+  if (source.initialState) {
+    reachable.add(source.initialState);
+    const queue = [source.initialState];
+    while (queue.length) {
+      const current = queue.shift()!;
+      for (const transition of source.transitions) {
+        if (transition instanceof FSATransition && transition.from === current && transition.label !== '' && !reachable.has(transition.to)) { reachable.add(transition.to); queue.push(transition.to); }
+      }
+    }
+  }
+  const states = source.states.filter((state) => reachable.has(state));
+  const index = new Map<State, number>(states.map((state, i) => [state, i] as const));
+  const marked: boolean[][] = Array.from({ length: states.length }, () => new Array(states.length).fill(false));
+  const mark = (a: number, b: number): void => { marked[a]![b] = true; marked[b]![a] = true; };
+  for (let i = 0; i < states.length; i++) {
+    for (let j = 0; j < i; j++) {
+      if (source.isFinalState(states[i]!) !== source.isFinalState(states[j]!)) mark(i, j);
+    }
+  }
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (let i = 0; i < states.length; i++) {
+      for (let j = 0; j < i; j++) {
+        if (marked[i]![j]) continue;
+        for (const symbol of symbols) {
+          const ti = [...source.transitions].filter((transition): transition is FSATransition => transition instanceof FSATransition && transition.from === states[i] && transition.label === symbol).map((transition) => transition.to)[0];
+          const tj = [...source.transitions].filter((transition): transition is FSATransition => transition instanceof FSATransition && transition.from === states[j] && transition.label === symbol).map((transition) => transition.to)[0];
+          if (!ti || !tj) { mark(i, j); changed = true; break; }
+          if (marked[index.get(ti)!]![index.get(tj)!]) { mark(i, j); changed = true; break; }
+        }
+      }
+    }
+  }
+  // Union-find merge of unmarked pairs.
+  const parent = states.map((_, i) => i);
+  const find = (x: number): number => (parent[x] === x ? x : (parent[x] = find(parent[x]!)));
+  const union = (a: number, b: number): void => { parent[find(a)] = find(b); };
+  for (let i = 0; i < states.length; i++) for (let j = 0; j < i; j++) if (!marked[i]![j]) union(i, j);
+  const groups = new Map<number, State[]>();
+  for (let i = 0; i < states.length; i++) {
+    const root = find(i);
+    if (!groups.has(root)) groups.set(root, []);
+    groups.get(root)!.push(states[i]!);
+  }
+  const minimal = new FiniteStateAutomaton();
+  const representatives = new Map<number, State>();
+  const ordered = [...groups.entries()].sort((left, right) => states.indexOf(left[1][0]!) - states.indexOf(right[1][0]!));
+  for (const [root] of ordered) {
+    const state = minimal.createState({ x: 0, y: 0 });
+    const members = groups.get(root)!;
+    state.name = members.map((member) => member.name).join(',');
+    representatives.set(root, state);
+  }
+  for (const [root] of ordered) {
+    const state = representatives.get(root)!;
+    const members = groups.get(root)!;
+    if (members.some((member) => source.isFinalState(member))) minimal.addFinalState(state);
+    if (members.includes(source.initialState!)) minimal.setInitialState(state);
+  }
+  for (const [root, members] of ordered) {
+    const from = representatives.get(root)!;
+    const seen = new Map<string, State>();
+    for (const member of members) {
+      for (const transition of source.transitions) {
+        if (!(transition instanceof FSATransition) || transition.from !== member || transition.label === '') continue;
+        if (!seen.has(transition.label)) seen.set(transition.label, transition.to);
+      }
+    }
+    for (const [label, target] of seen) {
+      const targetRoot = find(index.get(target)!);
+      minimal.transition(from, representatives.get(targetRoot)!, label);
+    }
+  }
+  layoutAutomaton(minimal);
+  return minimal;
+}
+
+function openMinifiedDFA(): void {
+  if (!(machine instanceof FiniteStateAutomaton)) return;
+  const minimized = minimizeDFA(machine);
+  if (!minimized.states.length || !minimized.initialState) { setStatus('Add an initial state to minify the DFA.', 'error'); return; }
+  const startTabId = activeTab()?.kind === 'start' ? activeTabId : '';
+  const name = `${currentFilename.replace(/\.jff$/iu, '') || 'dfa'}_min.jff`;
+  openTab(minimized, name);
+  const tab = activeTab();
+  if (tab) tab.recentKey = `automaton:${name.toLowerCase()}`;
+  addRecent({ name, kind: 'automaton', data: JFFCodec.encode(machine) });
+  if (startTabId) closeTab(startTabId);
+  render(); commitHistory(); updateHistoryButtons();
+  fitCanvasToView();
+  refreshSimulations();
+  setStatus('Minimal DFA opened in a new tab.', 'success'); showToast('Minimal DFA generated');
+}
+
 function openJff(file: File): void {
   file.text().then((contents) => {
     const structure = JFFCodec.decode(contents);
@@ -2739,6 +2968,24 @@ function refreshRegexBar(): void {
   syncRegexMirrorScroll();
 }
 
+/** BFS layering of states from the initial state; unreached states get the deepest layer. */
+function layoutLayers(automaton: FiniteStateAutomaton, states: State[]): State[][] {
+  const level = new Map<State, number>();
+  const queue: State[] = [];
+  if (automaton.initialState) { level.set(automaton.initialState, 0); queue.push(automaton.initialState); }
+  for (let cursor = 0; cursor < queue.length; cursor++) {
+    const current = queue[cursor]!;
+    for (const transition of automaton.getTransitionsFrom(current)) {
+      if (!level.has(transition.to)) { level.set(transition.to, level.get(current)! + 1); queue.push(transition.to); }
+    }
+  }
+  const unreached = Math.max(-1, ...level.values()) + 1;
+  for (const state of states) if (!level.has(state)) level.set(state, unreached);
+  const layers: State[][] = [];
+  for (const state of states) (layers[level.get(state)!] ??= []).push(state);
+  return layers;
+}
+
 /** Layered layout: BFS layers, barycenter sweeps to cut edge crossings, then y-relaxation toward neighbours. */
 function layoutAutomaton(automaton: FiniteStateAutomaton): void {
   const states = [...automaton.states];
@@ -2809,6 +3056,60 @@ function layoutAutomaton(automaton: FiniteStateAutomaton): void {
   }
   const centre = [...y.values()].reduce((sum, value) => sum + value, 0) / y.size;
   layers.forEach((layer, index) => layer.forEach((state) => { state.point = { x: 140 + index * gapX, y: 300 + y.get(state)! - centre }; }));
+  refineWithForces(automaton, states);
+}
+
+/** Force-directed refinement (Fruchterman–Reingold): repulsion between all pairs plus spring attraction along transitions, starting from the layered placement. Reduces edge crossings and flattening from cyclic DFA structure. */
+function refineWithForces(automaton: FiniteStateAutomaton, states: State[]): void {
+  if (states.length < 3) return;
+  // Ideal distance scales with state count AND graph depth so shallow
+  // strongly-connected DFAs (2-3 BFS layers after minimization) do not end
+  // up jammed and flat the way deep layered graphs never do.
+  const layers = layoutLayers(automaton, states);
+  const depth = Math.max(1, layers.length - 1);
+  const ideal = Math.max(240, Math.sqrt((states.length * 260 * 260) / 4) * (1 + 0.35 * Math.max(0, 4 - depth)));
+  const links = automaton.transitions.filter((item) => item.from !== item.to);
+  const iterations = 240;
+  const temp0 = ideal * 0.6;
+  // Symmetry break: when states start aligned (single BFS layer after
+  // minimization), every pair has dx or dy exactly 0 and repulsion can never
+  // move them along that axis - they stay frozen on a line forever. A tiny
+  // deterministic offset per index gives the forces a direction to work with.
+  states.forEach((state, i) => { state.point = { x: state.point.x + (i % 2 ? 1 : -1) * (i + 1) * 0.7, y: state.point.y + (i - (states.length - 1) / 2) * 0.7 }; });
+  const disp = new Map<State, { x: number; y: number }>(states.map((state) => [state, { x: 0, y: 0 }]));
+  for (let step = 0; step < iterations; step++) {
+    for (const entry of disp.values()) { entry.x = 0; entry.y = 0; }
+    for (let i = 0; i < states.length; i++) {
+      for (let j = i + 1; j < states.length; j++) {
+        const a = states[i]!; const b = states[j]!;
+        let dx = a.point.x - b.point.x; let dy = a.point.y - b.point.y;
+        const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+        const force = (ideal * ideal) / dist;
+        dx /= dist; dy /= dist;
+        disp.get(a)!.x += dx * force; disp.get(a)!.y += dy * force;
+        disp.get(b)!.x -= dx * force; disp.get(b)!.y -= dy * force;
+      }
+    }
+    for (const link of links) {
+      const a = link.from; const b = link.to;
+      let dx = a.point.x - b.point.x; let dy = a.point.y - b.point.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 0.01;
+      const force = (dist * dist) / ideal;
+      dx /= dist; dy /= dist;
+      disp.get(a)!.x -= dx * force; disp.get(a)!.y -= dy * force;
+      disp.get(b)!.x += dx * force; disp.get(b)!.y += dy * force;
+    }
+    const temp = temp0 * (1 - step / iterations) + 1;
+    for (const state of states) {
+      const d = disp.get(state)!;
+      const len = Math.sqrt(d.x * d.x + d.y * d.y) || 0.01;
+      const cap = Math.min(len, temp);
+      state.point = { x: state.point.x + (d.x / len) * cap, y: state.point.y + (d.y / len) * cap };
+    }
+  }
+  const xs = states.map((state) => state.point.x); const ys = states.map((state) => state.point.y);
+  const minX = Math.min(...xs); const minY = Math.min(...ys);
+  for (const state of states) state.point = { x: state.point.x - minX + 100, y: state.point.y - minY + 100 };
 }
 
 function openNFAFromRegex(): void {
